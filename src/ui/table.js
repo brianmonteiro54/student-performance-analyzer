@@ -81,7 +81,6 @@ export function limparDados() {
   state.globalData = [];
   state.rawCSVData = null;
 
-  byId("empty-state").removeAttribute("hidden");
   byId("dados-container").setAttribute("hidden", "");
   byId("btnLimpar").setAttribute("hidden", "");
   byId("graficos-container").setAttribute("hidden", "");

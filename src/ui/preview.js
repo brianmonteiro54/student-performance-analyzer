@@ -79,10 +79,7 @@ export function cancelarUpload() {
   if (input) input.value = "";
 }
 
-/**
- * Confirma o processamento: roda processCSV nos dados crus, salva
- * o histórico, troca o empty-state pela tabela e dispara o render.
- */
+
 export function confirmarProcessamento() {
   if (!state.pendingPreview || !state.pendingPreview.validation.ok) return;
 
@@ -103,7 +100,6 @@ export function confirmarProcessamento() {
     if (status) status.innerText = "Processamento concluído ✅";
     toast(`${state.globalData.length} aluno(s) carregado(s) com sucesso!`);
 
-    setHidden("empty-state", true);
     setHidden("dados-container", false);
     setHidden("btnLimpar", false);
 
