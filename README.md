@@ -2,7 +2,7 @@
 
 Sistema web para análise e acompanhamento do desempenho dos alunos do programa AWS re/Start, desenvolvido para facilitar o monitoramento de Knowledge Checks (KCs), Labs e o envio de feedbacks personalizados por e-mail.
 
-> **Versão 2.0** — Inclui validação de CSV, configurações personalizáveis, modal de envio em massa que contorna bloqueio de pop-ups, gráficos interativos, drag & drop e atalhos de teclado.
+> **Versão 2.0** — Validação de CSV, configurações personalizáveis, modal de envio em massa que contorna bloqueio de pop-ups, gráficos interativos, drag & drop, atalhos de teclado, detecção automática de contas de teste e alunos sem convite aceito, reprocessamento automático ao alterar configurações, e mensagem celebrativa para graduados.
 
 ---
 
@@ -10,84 +10,133 @@ Sistema web para análise e acompanhamento do desempenho dos alunos do programa 
 
 ### 📁 Carregamento inteligente
 - **Drag & drop** ou clique para selecionar
-- **Validação prévia** do arquivo CSV (colunas obrigatórias, encoding, e-mails)
-- **Preview com resumo** antes de processar (alunos, KCs, Labs detectados)
+- **Validação prévia** do arquivo CSV (colunas obrigatórias, tamanho máx. 10MB, encoding)
+- **Preview com resumo** antes de processar (alunos válidos, ignorados, KCs ativos, Labs ativos, graduados, limite mínimo)
+- **Avisos contextuais** para situações como turma pequena, e-mails inválidos, ou todas as atividades abaixo do threshold
 - **Histórico** dos últimos 5 arquivos carregados
 
-### ⚙️ Configurações personalizáveis
+### ⚙️ Configurações personalizáveis (persistidas em `localStorage`)
+
 - **Limite mínimo de alunos** para considerar atividade ativa (padrão: 5)
-  - **Auto-ajuste** para turmas pequenas (se a turma tiver menos alunos que o limite, ele se adapta)
-- **Critérios de status** (KC ≥ 70% e Lab ≥ 95% por padrão) totalmente editáveis
+  - **Auto-ajuste** para turmas pequenas (se a turma tiver menos alunos que o limite, ele se adapta automaticamente)
+- **Critérios de status**:
+  - KC ≥ X% para "OK" (padrão: 70)
+  - Lab ≥ X% para "OK" (padrão: 95)
 - **Assunto do e-mail** customizável
-- Tudo persiste no `localStorage`
+
+### 🚫 Filtros automáticos de alunos não-elegíveis
+
+O sistema detecta e filtra automaticamente, de forma transparente:
+
+| Tipo | Critério de detecção | Exemplo |
+|---|---|---|
+| **Conta de teste do Canvas** | Nome com padrão `aluno, Testar` ou e-mail é hash hex (sem `@`) | `aluno, Testar` (e-mail = `fe89a207...`) |
+| **Não aceitou convite** | `SIS Login ID` vazio **e** zero KCs/Labs preenchidos | Aluno fantasma na lista da turma |
+
+Esses casos aparecem como avisos no preview e não interferem nos cálculos da turma. **Critério conservador**: alunos sem e-mail mas com atividades preenchidas (caso edge real) são preservados na tabela.
 
 ### 📊 Análise visual
-- **Tabela interativa** com filtros, busca, ordenação e barra de progresso por aluno
-- **Linha expansível** mostrando KCs e Labs pendentes ao clicar
-- **Gráficos** (toggleable):
+
+- **Tabela interativa** com filtros (clicáveis nos contadores), busca, ordenação, barra de progresso por aluno, e linha expansível mostrando KCs e Labs pendentes
+- **Gráficos toggleable**:
   - 🥧 Distribuição por status (donut)
   - 📈 Média da turma em KCs, Labs e Total (barras)
 
 ### 🎯 Classificação automática
-- 🔴 **Crítico** — KC < critério **e** Lab < critério
-- 🟡 **Atenção** — apenas um dos critérios atingido
-- 🟢 **OK** — KC ≥ critério **e** Lab ≥ critério
-- 🎓 **Graduado** — coluna `Graduated Final Points` = 1
+
+| Status | Critério |
+|---|---|
+| 🟢 OK | KC ≥ critério **e** Lab ≥ critério |
+| 🔴 Crítico | KC < critério **e** Lab < critério |
+| 🟡 Atenção | Apenas um dos critérios atingido |
+| 🎓 Graduado | Coluna `Graduated Final Points` = 1 (independe de outras notas) |
 
 ### 📧 Envio de e-mails (sem bloqueio do navegador)
-- Botão individual por aluno (📋 copiar mensagem + ✉️ abrir Outlook)
-- **Modal de envio em massa** com 3 modos:
-  1. **📨 Um por um** — abre cada e-mail manualmente (sem bloqueio de pop-up)
-  2. **📋 Copiar todos** — lista de e-mails separados por `;` para colar em CC/BCC
-  3. **💾 Exportar mensagens** — `.txt` ou `.csv` com todas as mensagens prontas
-- Mensagens com saudação dinâmica (Bom dia/Boa tarde/Boa noite) e listagem de pendências
+
+**Por aluno:**
+- 📋 Copiar mensagem personalizada (com pendências individuais)
+- ✉️ Abrir Outlook Web já preenchido (destinatário + assunto + corpo)
+
+**Em massa** (Críticos / Atenção):
+1. **📨 Um por um** — abre cada e-mail manualmente, sem bloqueio de pop-ups, com indicador "✅ Aberto"
+2. **📋 Copiar todos** — lista de e-mails separados por `;` para colar em Cco
+3. **💾 Exportar mensagens** — baixa `.txt` ou `.csv` com todas as mensagens prontas para revisão/arquivamento
+
+**Mensagem para graduados** 🎓 — texto celebrativo automático parabenizando pela conclusão (ao invés do template padrão de cobrança).
 
 ### 📋 Cópia de desempenho em massa
-- Cole uma lista de e-mails → recebe a tabela de desempenho **na mesma ordem** (Total, Lab, KC) pronta para colar em planilha
+
+Cole uma lista de e-mails → recebe a tabela de desempenho **na mesma ordem** (Total, Lab, KC) em formato pronto para colar em planilha (separado por tab).
+
+### 🔄 Reprocessamento automático
+
+Sempre que algo muda no contexto de cálculo, o sistema **reprocessa automaticamente** o CSV em memória — mantendo a tela sempre consistente:
+
+- Ignorar/restaurar um aluno
+- Mudar o limite mínimo (`minAlunos`)
+- Importar lista de ignorados
+
+Isso evita o problema sutil de cálculos ficarem obsoletos: quando você ignora alunos, atividades no limite do threshold podem deixar de ser ativas, e os outros alunos têm suas médias e pendências recalculadas.
+
+### 🛡️ Lista de ignorados manualmente
+
+- Botão **🚫** em cada linha da tabela para ignorar um aluno (usa e-mail como chave; cai no ID Canvas se o e-mail estiver vazio)
+- **Timestamp ISO 8601** registrando quando cada aluno foi ignorado
+- **Lista gerenciável** no modal ⚙️ Configurações (ver, restaurar)
+- **Persistência:** salvo no `localStorage` do navegador
+- **Backup JSON:** botões de exportar/importar para preservar a lista entre máquinas, navegadores ou após limpeza de cache (essencial para cursos de 4+ meses)
 
 ### 🌙 Dark Mode
+
 - Persistido no `localStorage`
 - Atalho: tecla **D**
+- Gráficos ajustam cores automaticamente
 
 ### ⌨️ Atalhos de teclado
-| Atalho     | Ação                               |
-| ---------- | ---------------------------------- |
-| `/`        | Focar na busca                     |
-| `Esc`      | Fechar modais e limpar busca       |
-| `D`        | Alternar tema escuro               |
+
+| Atalho | Ação |
+|---|---|
+| `/` | Focar na busca |
+| `Esc` | Fechar modais e limpar busca |
+| `D` | Alternar tema escuro |
+
+### 📱 Responsividade
+
+Layout adapta-se automaticamente para desktop, tablet e mobile (colunas menos importantes ocultas em telas pequenas).
 
 ---
 
 ## 📐 Cálculo de desempenho
 
 ### 📘 KCs
-Média aritmética de todos os KCs ativos.
+Média aritmética dos KCs ativos. Atividades vazias contam como `0`.
 
 ### 🧪 Labs
-Média dos Labs ativos, normalizada para a escala de 0 a 100% (cada lab é considerado feito = 100% se o valor for > 0).
+Média dos Labs ativos, normalizada para escala 0–100% (cada lab é considerado feito = 100% se o valor for > 0).
 
 ### 📊 Total
-Média entre KC e Lab.
+Média aritmética entre KC e Lab.
 
-### ⏳ Pendências
-Uma atividade é considerada pendente quando a célula está vazia no CSV. Qualquer valor preenchido (inclusive `0` ou `0,00`) é considerado realizado.
+### ⏳ Pendência
+Atividade é considerada pendente apenas quando a célula está vazia. Qualquer valor preenchido (inclusive `0` ou `0,00`) é considerado realizado.
 
 ### 🎯 Atividade ativa
-Um KC ou Lab só é incluído no cálculo se pelo menos N alunos tiverem a célula preenchida (N configurável, padrão 5). Isso evita que provas/atividades feitas por poucos alunos distorçam as médias da turma.
+Um KC ou Lab só entra no cálculo se pelo menos N alunos válidos tiverem a célula preenchida (N configurável, padrão 5).
 
 ---
 
 ## 🗂️ Formato do CSV esperado
 
-O arquivo deve ser exportado diretamente do Canvas LMS, sem alterações no Excel.
+Arquivo deve ser exportado diretamente do **Canvas LMS**, sem alterações no Excel.
 
-| Coluna                    | Finalidade                     |
-| ------------------------- | ------------------------------ |
-| `Student`                 | Nome do aluno                  |
-| `SIS Login ID`            | E-mail do aluno                |
-| `Graduated Final Points`  | Indica se o aluno foi graduado |
-| `NNN...KC...`             | Knowledge Checks               |
-| `NNN...Lab...`            | Laboratórios                   |
+| Coluna | Finalidade |
+|---|---|
+| `Student` | Nome do aluno (formato `Sobrenome, Nome`) |
+| `ID` | ID Canvas (usado como fallback se e-mail estiver vazio) |
+| `SIS Login ID` | E-mail do aluno |
+| `Graduated Final Points` | `1` indica aluno graduado |
+| `NNN...KC...` | Knowledge Checks (colunas começando com número e contendo `KC`) |
+| `NNN...Lab...` | Laboratórios (colunas começando com número e contendo `Lab`) |
 
 A linha `Points Possible` é ignorada automaticamente.
 
@@ -97,30 +146,14 @@ A linha `Points Possible` é ignorada automaticamente.
 
 ```
 📦 student-performance-analyzer
- ┣ 📄 index.html       # Estrutura da interface
+ ┣ 📄 index.html       # Estrutura da interface (modais, tabela, gráficos)
  ┣ 📄 style.css        # Estilos, dark mode e responsividade
- ┣ 📄 app.js           # Lógica principal (validação, processamento, gráficos)
+ ┣ 📄 app.js           # Lógica principal (validação, processamento, gráficos, envio)
  ┣ 📁 assets/
  ┃ ┣ 🖼️ anderson-albuquerque.jpg
  ┃ ┗ 🖼️ brian-richard.jpg
  ┗ 📄 README.md
 ```
-
----
-
-## ▶️ Como utilizar
-
-### 1️⃣ Hospedagem (GitHub Pages)
-Faça o fork ou push deste repositório e habilite o GitHub Pages em **Settings → Pages → Source: main / root**. Não há build — funciona como site estático.
-
-### 2️⃣ Acesse o site
-Abra a URL do GitHub Pages no navegador.
-
-### 3️⃣ Exporte o CSV do Canvas
-**Notas → Exportar → CSV** (não edite no Excel).
-
-### 4️⃣ Carregue o arquivo
-Arraste o CSV para a área indicada ou clique para selecionar. Confira o **preview** (alunos, KCs ativos, Labs ativos, avisos) e clique em **Confirmar**.
 
 ---
 
