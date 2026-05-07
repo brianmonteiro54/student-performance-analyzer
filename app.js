@@ -1070,7 +1070,7 @@ function toggleDetalhe(tr, row) {
 function gerarMensagem(row) {
   const saudacao = getSaudacao();
 
-  // Mensagem especial e celebrativa para alunos graduados
+  // 1. Mensagem celebrativa para alunos formalmente graduados
   if (row.graduated) {
     return `${saudacao} ${row.name}, tudo bem com você?
 
@@ -1081,7 +1081,22 @@ Que jornada! Foram vários meses de dedicação, laboratórios desafiadores e mu
 Atenciosamente,`;
   }
 
-  // Mensagem padrão (alunos ainda em curso)
+  // 2. Mensagem motivacional para quem concluiu todas as atividades disponíveis
+  //    mas ainda não foi formalmente graduado (graduated=false e zero pendências)
+  if (!row.pendencias || row.pendencias.length === 0) {
+    const primeiroNome = (row.name || "").split(" ")[0] || row.name || "aluno";
+    return `${saudacao}, ${primeiroNome}.
+
+Seu desempenho nos KCs está em ${row.kc}%, e seu desempenho nos Labs está em ${row.lab}%.
+
+Parabéns, você concluiu todos os KCs e laboratórios disponíveis até o momento! Essa conquista reflete sua dedicação e compromisso em aproveitar ao máximo essa oportunidade.
+
+Continue estudando e revisando os conteúdos, pois o próximo grande passo está à sua frente: a certificação Cloud Practitioner! Essa certificação é uma porta de entrada para oportunidades no mercado, e você já está na direção certa.
+
+Lembre-se: todo o esforço investido agora é um investimento no seu futuro.`;
+  }
+
+  // 3. Mensagem padrão (alunos com pendências em KCs ou Labs)
   const kcPendentes  = row.pendencias.filter(p => isKC(p));
   const labPendentes = row.pendencias.filter(p => isLab(p));
 
