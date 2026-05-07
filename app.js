@@ -93,14 +93,14 @@ function isKC(col)  { return /^\d+.*kc/.test(normalize(col));  }
 function isLab(col) { return /^\d+.*lab/.test(normalize(col)); }
 
 // Detecta contas de teste do Canvas (criadas automaticamente para o instrutor)
-// Padrões fortes: nome explicitamente de teste, ou e-mail é um hash (sem @).
+// e alunos que não aceitaram o convite (SIS Login ID vazio + zero atividades).
 function isContaTesteAutomatica(rawRow) {
   const studentRaw = (rawRow["Student"] || "").toString().trim();
   // Canvas exporta como "Sobrenome, Nome" — então "aluno, Testar" vira "Testar aluno"
   const nome  = studentRaw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   const email = (rawRow["SIS Login ID"] || "").toString().trim();
 
-  // Padrões claros de conta de teste
+  // 1. Padrões claros de conta de teste no nome
   const padroesNome = [
     /^aluno,\s*testar?$/i,
     /^testar?,\s*aluno$/i,
@@ -111,8 +111,19 @@ function isContaTesteAutomatica(rawRow) {
   ];
   if (padroesNome.some(p => p.test(nome))) return true;
 
-  // E-mail é hash (sem @) — sinal claro de conta de sistema
+  // 2. E-mail é hash hex (sem @) — sinal claro de conta de sistema
   if (email && !email.includes("@") && /^[a-f0-9]{20,}$/i.test(email)) return true;
+
+  // 3. Sem SIS Login ID + zero atividades reais (KCs ou Labs preenchidos)
+  //    = aluno que não aceitou o convite do Canvas (ainda não tem login institucional
+  //    e nunca fez nenhuma atividade). Conservador: só filtra se NADA foi feito.
+  if (!email) {
+    const temAlgumaAtividade = Object.entries(rawRow).some(([col, val]) => {
+      if (!isKC(col) && !isLab(col)) return false;
+      return val !== undefined && val !== null && val.toString().trim() !== "";
+    });
+    if (!temAlgumaAtividade) return true;
+  }
 
   return false;
 }
@@ -331,17 +342,28 @@ function validarCSV(data, meta) {
   );
 
   // Separa alunos válidos dos ignorados
-  const alunosTeste     = dataLimpa.filter(r => isContaTesteAutomatica(r));
+  // Detecta motivo de cada filtro automático para reportar no preview separadamente
+  function categorizarAuto(row) {
+    if (!isContaTesteAutomatica(row)) return null;
+    const nome  = (row["Student"] || "").toLowerCase();
+    const email = (row["SIS Login ID"] || "").toString().trim();
+    if (!email) return "semConvite";
+    return "teste";
+  }
+
+  const alunosTeste     = dataLimpa.filter(r => categorizarAuto(r) === "teste");
+  const alunosSemConv   = dataLimpa.filter(r => categorizarAuto(r) === "semConvite");
   const alunosManuais   = dataLimpa.filter(r => !isContaTesteAutomatica(r) && isAlunoIgnorado(r));
   const dataValidos     = dataLimpa.filter(r => !isAlunoIgnorado(r));
 
   info.totalLinhas       = dataValidos.length;
   info.contasTeste       = alunosTeste.length;
+  info.semConviteAceito  = alunosSemConv.length;
   info.ignoradosManuais  = alunosManuais.length;
 
   if (!dataValidos.length) {
-    if (alunosTeste.length || alunosManuais.length) {
-      errors.push(`Todos os ${dataLimpa.length} aluno(s) foram filtrados como contas de teste/ignorados. Verifique a lista de ignorados em ⚙️ Configurações.`);
+    if (alunosTeste.length || alunosSemConv.length || alunosManuais.length) {
+      errors.push(`Todos os ${dataLimpa.length} aluno(s) foram filtrados. Verifique a lista de ignorados em ⚙️ Configurações.`);
     } else {
       errors.push("O arquivo não contém nenhum aluno.");
     }
@@ -351,6 +373,10 @@ function validarCSV(data, meta) {
   if (alunosTeste.length) {
     const nomes = alunosTeste.map(r => fixEncoding((r["Student"] || "").split(", ").reverse().join(" "))).join(", ");
     warnings.push(`${alunosTeste.length} conta(s) de teste do Canvas detectada(s) e ignorada(s) automaticamente: ${nomes}.`);
+  }
+  if (alunosSemConv.length) {
+    const nomes = alunosSemConv.map(r => fixEncoding((r["Student"] || "").split(", ").reverse().join(" "))).join(", ");
+    warnings.push(`${alunosSemConv.length} aluno(s) que não aceitaram o convite do Canvas (sem e-mail e sem nenhuma atividade): ${nomes}. Filtrados automaticamente.`);
   }
   if (alunosManuais.length) {
     warnings.push(`${alunosManuais.length} aluno(s) ignorado(s) manualmente (configurável em ⚙️ Configurações).`);
@@ -433,8 +459,8 @@ function mostrarPreview(validation) {
   // Stats em cards
   html += '<div class="csv-stats">';
   html += `<div class="csv-stat success"><span class="csv-stat-label">Alunos válidos</span><span class="csv-stat-value">${info.totalLinhas || 0}</span></div>`;
-  if (info.contasTeste || info.ignoradosManuais) {
-    const totalIgn = (info.contasTeste || 0) + (info.ignoradosManuais || 0);
+  if (info.contasTeste || info.ignoradosManuais || info.semConviteAceito) {
+    const totalIgn = (info.contasTeste || 0) + (info.ignoradosManuais || 0) + (info.semConviteAceito || 0);
     html += `<div class="csv-stat warning"><span class="csv-stat-label">Ignorados</span><span class="csv-stat-value">${totalIgn}</span></div>`;
   }
   html += `<div class="csv-stat ${info.kcAtivos > 0 ? 'success' : 'warning'}"><span class="csv-stat-label">KCs ativos</span><span class="csv-stat-value">${info.kcAtivos ?? 0} <small style="font-size:12px;color:var(--text-muted)">/ ${info.kcCols ?? 0}</small></span></div>`;
@@ -575,6 +601,7 @@ function processCSV(data) {
     return {
       name:      fixEncoding((row["Student"] || "").split(", ").reverse().join(" ")),
       email:     (row["SIS Login ID"] || "").trim().toLowerCase(),
+      id:        (row["ID"] || "").toString().trim(),
       kc:        kc.toFixed(2),
       lab:       lab.toFixed(2),
       total:     total.toFixed(2),
@@ -648,9 +675,11 @@ function limparDados() {
 
 // ===================== IGNORAR ALUNO =====================
 function ignorarAluno(row) {
-  const chave = (row.email || "").toLowerCase().trim();
+  // Usa e-mail (lowercase) como chave preferencial; cai pro ID Canvas como fallback
+  // (alunos com SIS Login ID vazio mas que tenham atividades preenchidas precisam disso).
+  const chave = (row.email || "").toLowerCase().trim() || (row.id || "").trim();
   if (!chave) {
-    toast("Aluno sem e-mail/ID — não é possível ignorar.", "error");
+    toast("Aluno sem e-mail nem ID Canvas — não é possível ignorar.", "error");
     return;
   }
   if (!confirm(`Ignorar "${row.name}" das próximas análises?\n\nVocê pode reverter em ⚙️ Configurações.`)) return;
