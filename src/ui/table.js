@@ -185,15 +185,13 @@ export function renderTable() {
     const btnCopiar = $(".btn-copiar", tr);
     btnCopiar.dataset.email = row.email;
     btnCopiar.dataset.msg = msg;
-    btnCopiar.addEventListener("click", function (e) {
-      e.stopPropagation();
+    btnCopiar.addEventListener("click", function () {
       copiarEAbrirOutlook(this.dataset.msg, this.dataset.email);
     });
 
     // Listener do botão Ignorar.
     const btnIgnorar = $(".btn-ignorar", tr);
-    btnIgnorar.addEventListener("click", function (e) {
-      e.stopPropagation();
+    btnIgnorar.addEventListener("click", function () {
       if (ignorarAluno(row)) {
         reprocessar();
         toast(`"${row.name}" foi ignorado e os cálculos foram atualizados. ✅`);
@@ -201,7 +199,12 @@ export function renderTable() {
     });
 
     // Click na linha → expande detalhes.
-    tr.addEventListener("click", () => toggleDetalhe(tr, row));
+    // Exceção: cliques na célula de ações (📋 ✉️ 🚫) NÃO expandem,
+    // para que o usuário possa copiar/enviar sem abrir o painel de detalhes.
+    tr.addEventListener("click", (e) => {
+      if (e.target.closest(".actions-cell")) return;
+      toggleDetalhe(tr, row);
+    });
     tbody.appendChild(tr);
   });
 
