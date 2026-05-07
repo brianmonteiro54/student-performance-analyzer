@@ -13,6 +13,7 @@
  */
 
 import { config, saveConfig, CONFIG_DEFAULT } from "../config.js";
+import { getEnvios, setEnvios, limparEnvios } from "./sent-tracker.js";
 import { toast } from "../ui/toast.js";
 
 const VERSAO_FORMATO = 1;
@@ -22,6 +23,7 @@ const TIPO = "student-analyzer-backup-completo";
  * Gera um arquivo JSON com TODAS as configurações persistidas e dispara o download.
  */
 export function exportarBackupCompleto() {
+  const envios = getEnvios();
   const payload = {
     tipo: TIPO,
     versao: VERSAO_FORMATO,
@@ -34,6 +36,7 @@ export function exportarBackupCompleto() {
       encerramentos:    { ...config.encerramentos },
       alunosIgnorados:  [...config.alunosIgnorados],
     },
+    envios: { ...envios },
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -48,6 +51,7 @@ export function exportarBackupCompleto() {
 
   const totalIgn = config.alunosIgnorados.length;
   const totalEnc = Object.keys(config.encerramentos || {}).length;
+  const totalEnv = Object.keys(envios).length;
   toast(
     `Backup completo exportado: critérios + assunto + ${totalEnc} encerramento(s) + ${totalIgn} ignorado(s). ✅`
   );
@@ -76,6 +80,7 @@ export function importarBackupCompleto(onAfterImport) {
 
         const totalIgn = sanitized.alunosIgnorados.length;
         const totalEnc = Object.keys(sanitized.encerramentos).length;
+        const totalEnv = Object.keys(sanitized.envios).length;
         const confirmado = confirm(
           `Restaurar backup completo?\n\n` +
             `Você vai SUBSTITUIR todas as suas configurações atuais por:\n` +
@@ -84,7 +89,8 @@ export function importarBackupCompleto(onAfterImport) {
             `  • Critério Lab: ${sanitized.criterioLab}%\n` +
             `  • Assunto: "${sanitized.assuntoEmail}"\n` +
             `  • ${totalEnc} encerramento(s)\n` +
-            `  • ${totalIgn} aluno(s) ignorado(s)\n\n` +
+            `  • ${totalIgn} aluno(s) ignorado(s)\n` +
+            `  • ${totalEnv} marcação(ões) de envio\n\n` +
             `Esta ação não pode ser desfeita.`
         );
         if (!confirmado) {
@@ -100,6 +106,9 @@ export function importarBackupCompleto(onAfterImport) {
         config.encerramentos   = sanitized.encerramentos;
         config.alunosIgnorados = sanitized.alunosIgnorados;
         saveConfig();
+
+        // Histórico de envios fica em chave própria do localStorage.
+        setEnvios(sanitized.envios);
 
         toast("Backup restaurado com sucesso. ✅");
         if (typeof onAfterImport === "function") onAfterImport();
@@ -145,6 +154,8 @@ function validarESanear(payload) {
     assuntoEmail:    saneStr(src.assuntoEmail,    CONFIG_DEFAULT.assuntoEmail),
     encerramentos:   saneEncerramentos(src.encerramentos),
     alunosIgnorados: saneIgnorados(src.alunosIgnorados),
+    // `envios` fica fora de `config` no JSON (chave separada no localStorage).
+    envios:          saneEnvios(payload.envios),
   };
 }
 
@@ -188,4 +199,14 @@ function saneIgnorados(v) {
       return null;
     })
     .filter(Boolean);
+}
+function saneEnvios(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out = {};
+  for (const [chave, iso] of Object.entries(v)) {
+    if (typeof chave === "string" && typeof iso === "string" && iso.trim()) {
+      out[chave] = iso;
+    }
+  }
+  return out;
 }

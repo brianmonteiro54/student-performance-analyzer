@@ -180,3 +180,28 @@ body.dark .progress-bar-container span { color: #f8fafc; text-shadow: 0 0 2px rg
   font-size: 14px;
 }
 
+
+/* ===================== LINHA COM E-MAIL JÁ ENVIADO ===================== */
+/* Indica visualmente que o usuário já clicou em 📋 ou ✉️ para este aluno.
+   Persiste em localStorage (services/sent-tracker.js). Limpa via
+   "Restaurar tudo" nas configurações. */
+tr.sent {
+  /* Fita verde sutil na borda esquerda — visível sem ser intrusiva */
+  box-shadow: inset 4px 0 0 var(--success);
+}
+
+.action-btn.sent {
+  position: relative;
+  /* O ícone do botão Copiar já vira ✅; aqui realça o link do Outlook */
+}
+
+a.btn-outlook.sent::after {
+  content: "✓";
+  position: absolute;
+  top: 0;
+  right: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success);
+  line-height: 1;
+}

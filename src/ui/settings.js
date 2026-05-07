@@ -17,6 +17,7 @@ import { mostrarPreview } from "./preview.js";
 import { validateCSV } from "../core/csv.js";
 import { formatarEncerramento, formatarDataIgnorado } from "../utils/format.js";
 import { desfazerIgnorar } from "../services/ignored.js";
+import { getEnvios, limparEnvios } from "../services/sent-tracker.js";
 import {
   adicionarEncerramento as servAdicionarEnc,
   removerEncerramento as servRemoverEnc,
@@ -110,10 +111,11 @@ export function salvarConfiguracoes() {
   }
 }
 
-/** Reseta TUDO para o padrão (critérios, assunto, encerramentos e ignorados). */
+/** Reseta TUDO para o padrão (critérios, assunto, encerramentos, ignorados e envios). */
 export function resetarConfiguracoes() {
   const totalIgn = config.alunosIgnorados.length;
   const totalEnc = Object.keys(config.encerramentos || {}).length;
+  const totalEnv = Object.keys(getEnvios()).length;
 
   let aviso = "Restaurar TODAS as configurações para o padrão?\n\n";
   aviso += "Isso vai apagar:\n";
@@ -121,6 +123,7 @@ export function resetarConfiguracoes() {
   aviso += "  • Assunto do e-mail\n";
   if (totalEnc) aviso += `  • ${totalEnc} data(s) de encerramento\n`;
   if (totalIgn) aviso += `  • ${totalIgn} aluno(s) ignorado(s) manualmente\n`;
+  if (totalEnv) aviso += `  • ${totalEnv} marcação(ões) de envio (📋/✉️)\n`;
   aviso += "\n⚠️ Esta ação não pode ser desfeita.";
   if (totalIgn || totalEnc) {
     aviso += '\nDica: exporte um backup antes (botão "💾 Exportar backup").';
@@ -129,10 +132,10 @@ export function resetarConfiguracoes() {
   if (!confirm(aviso)) return;
 
   resetConfig();
+  limparEnvios();
   abrirConfiguracoes();
 
-  // Limpar ignorados muda quem aparece na tabela; mudar critérios afeta status.
-  // Reprocessa se houver dados carregados.
+  // Limpar ignorados/envios muda quem aparece e como; reprocessa se houver dados.
   if (state.globalData.length) {
     reprocessar();
     toast("Configurações restauradas e cálculos refeitos. ✅");

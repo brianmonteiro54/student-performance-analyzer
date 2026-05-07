@@ -20,8 +20,10 @@ import { config } from "../config.js";
 import { getStatus, STATUS_ICON, STATUS_COLOR } from "../core/status.js";
 import { gerarMensagem } from "../core/message.js";
 import { isKC, isLab, formatarNomeAtividade } from "../core/activity.js";
+import { formatarDataIgnorado } from "../utils/format.js";
 import { ignorarAluno } from "../services/ignored.js";
 import { copiarEAbrirOutlook } from "../services/clipboard.js";
+import { getChaveEnvio, getEnviadoEm, marcarEnviado } from "../services/sent-tracker.js";
 import { reprocessar } from "./preview.js";
 import { renderGraficos } from "./charts.js";
 import { toast } from "./toast.js";
@@ -146,8 +148,18 @@ export function renderTable() {
     const icon = STATUS_ICON[status] || "🔴";
     const barColor = STATUS_COLOR[status] || "#dc2626";
 
+    // Estado de envio: chave estável + última data ISO ou null.
+    const chaveEnvio = getChaveEnvio(row);
+    const enviadoEm = getEnviadoEm(chaveEnvio);
+
     const tr = document.createElement("tr");
     tr.classList.add(status);
+    if (enviadoEm) tr.classList.add("sent");
+
+    const tooltipCopiar = enviadoEm
+      ? `Enviado em ${formatarDataIgnorado(enviadoEm)} — clique para reenviar`
+      : "Copiar mensagem";
+
     tr.innerHTML = `
       <td>${index + 1}</td>
       <td class="name-cell" title="${row.name} — ${row.email}">${icon} ${row.name}</td>
@@ -172,8 +184,8 @@ export function renderTable() {
         }
       </td>
       <td class="actions-cell">
-        <button class="action-btn btn-copiar" title="Copiar mensagem">📋</button>
-        <a class="action-btn" target="_blank" title="Enviar e-mail (Outlook)"
+        <button class="action-btn btn-copiar${enviadoEm ? " sent" : ""}" title="${tooltipCopiar}">${enviadoEm ? "✅" : "📋"}</button>
+        <a class="action-btn btn-outlook${enviadoEm ? " sent" : ""}" target="_blank" title="${enviadoEm ? `Enviado em ${formatarDataIgnorado(enviadoEm)} — clique para reenviar` : "Enviar e-mail (Outlook)"}"
           href="https://outlook.office.com/mail/deeplink/compose?to=${row.email}&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(msg)}">
           ✉️
         </a>
@@ -181,13 +193,36 @@ export function renderTable() {
       </td>
     `;
 
+    /** Marca a row como enviada e atualiza tooltips/ícones sem re-renderizar a tabela. */
+    function marcarLinhaEnviada() {
+      if (!chaveEnvio) return;
+      marcarEnviado(chaveEnvio);
+      tr.classList.add("sent");
+
+      const btn = $(".btn-copiar", tr);
+      btn.classList.add("sent");
+      btn.textContent = "✅";
+
+      const link = $(".btn-outlook", tr);
+      link.classList.add("sent");
+
+      const tip = `Enviado em ${formatarDataIgnorado(new Date().toISOString())} — clique para reenviar`;
+      btn.title = tip;
+      link.title = tip;
+    }
+
     // Listener do botão Copiar (mantém payload em data-* para evitar closure).
     const btnCopiar = $(".btn-copiar", tr);
     btnCopiar.dataset.email = row.email;
     btnCopiar.dataset.msg = msg;
     btnCopiar.addEventListener("click", function () {
       copiarEAbrirOutlook(this.dataset.msg, this.dataset.email);
+      marcarLinhaEnviada();
     });
+
+    // Listener do link do Outlook (não cancela navegação, apenas marca).
+    const linkOutlook = $(".btn-outlook", tr);
+    linkOutlook.addEventListener("click", marcarLinhaEnviada);
 
     // Listener do botão Ignorar.
     const btnIgnorar = $(".btn-ignorar", tr);
