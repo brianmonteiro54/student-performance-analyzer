@@ -315,18 +315,26 @@
           Contas de teste do Canvas (como "Testar aluno") são detectadas e ignoradas <strong>automaticamente</strong>.
           Use o botão 🚫 na linha de cada aluno para ignorá-lo manualmente. Aqui você pode revertê-los.
         </p>
+        <div id="config-ignorados-lista"></div>
+      </div>
+
+      <div class="config-group">
+        <label class="config-label">💾 Backup completo das configurações</label>
+        <p class="config-hint">
+          Salva em um único arquivo JSON <strong>tudo</strong> que você configurou:
+          critérios, assunto do e-mail, datas de encerramento e lista de alunos ignorados.
+        </p>
         <p class="config-hint" style="background:var(--primary-soft);color:var(--primary);padding:8px 12px;border-radius:6px;">
-          💡 <strong>Dica para cursos longos:</strong> a lista é salva no seu navegador (<code>localStorage</code>).
-          Ela some se você limpar dados do navegador, trocar de máquina ou usar modo anônimo.
+          💡 <strong>Dica para cursos longos:</strong> as configurações ficam no seu navegador (<code>localStorage</code>)
+          e somem se você limpar dados do navegador, trocar de máquina ou usar modo anônimo.
           Para cursos de meses, <strong>exporte um backup periodicamente</strong> e re-importe se precisar.
         </p>
-        <div id="config-ignorados-lista"></div>
         <div class="card-actions" style="margin-top:10px;">
-          <button class="btn-secondary" data-action="exportar-lista-ignorados" title="Baixar arquivo JSON com a lista">
-            💾 Exportar lista (backup)
+          <button class="btn-secondary" data-action="exportar-backup-completo" title="Baixar JSON com todas as configurações">
+            💾 Exportar backup
           </button>
-          <button class="btn-secondary" data-action="importar-lista-ignorados" title="Restaurar lista de um arquivo JSON">
-            📥 Importar lista
+          <button class="btn-secondary" data-action="importar-backup-completo" title="Restaurar todas as configurações de um arquivo JSON">
+            📥 Restaurar backup
           </button>
         </div>
       </div>

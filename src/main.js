@@ -58,7 +58,7 @@ import {
 
 import { exportarCSV, exportarMensagens, exportarMensagensCSV } from "./services/exporter.js";
 import { mostrarHistorico } from "./services/history.js";
-import { exportarListaIgnorados, importarListaIgnorados } from "./services/ignored.js";
+import { exportarBackupCompleto, importarBackupCompleto } from "./services/backup.js";
 import { reprocessar } from "./ui/preview.js";
 
 /**
@@ -114,9 +114,11 @@ const actions = {
   "remover-encerramento":   (_e, btn) => removerEncerramentoFromUI(btn.dataset.section),
 
   // ---- Lista de ignorados ----
-  "restaurar-ignorado":      (_e, btn) => handleRestaurarIgnorado(btn.dataset.chave),
-  "exportar-lista-ignorados": exportarListaIgnorados,
-  "importar-lista-ignorados": () => importarListaIgnorados(reprocessar),
+  "restaurar-ignorado": (_e, btn) => handleRestaurarIgnorado(btn.dataset.chave),
+
+  // ---- Backup completo (todas as configurações em um único JSON) ----
+  "exportar-backup-completo": exportarBackupCompleto,
+  "importar-backup-completo": () => importarBackupCompleto(reprocessar),
 };
 
 /** Conecta o event delegation global para todos os `data-action`. */
