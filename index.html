@@ -2,111 +2,356 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Desempenho Acadêmico</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sistema de análise de desempenho acadêmico para o programa AWS re/Start">
+  <title>Desempenho Acadêmico — AWS re/Start</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
 </head>
 <body>
 
 <!-- TOAST -->
-<div id="toast-container"></div>
+<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
 <!-- HEADER -->
-<div class="page-header">
-  <h2>📊 Desempenho Acadêmico — AWS re/Start</h2>
-  <button class="btn-dark-toggle" onclick="toggleDarkMode()">🌙</button>
-</div>
-
-<!-- UPLOAD -->
-<div class="upload-card">
-  <label class="upload-label" for="fileInput">📁 Selecione o arquivo CSV</label>
-  <div class="upload-row">
-    <input type="file" id="fileInput" accept=".csv">
-    <button onclick="handleFile()">Processar</button>
-    <button class="btn-secondary" onclick="exportarCSV()">⬇️ Exportar CSV</button>
-    <button class="btn-secondary" onclick="mostrarHistorico()">🕓 Histórico</button>
+<header class="page-header">
+  <div class="header-title">
+    <h1>📊 Desempenho Acadêmico</h1>
+    <span class="header-subtitle">AWS re/Start</span>
   </div>
+  <div class="header-actions">
+    <button class="btn-icon" onclick="abrirAjuda()" title="Ajuda" aria-label="Ajuda">
+      <span aria-hidden="true">❓</span>
+    </button>
+    <button class="btn-icon" onclick="abrirConfiguracoes()" title="Configurações" aria-label="Configurações">
+      <span aria-hidden="true">⚙️</span>
+    </button>
+    <button class="btn-icon" id="darkToggleBtn" onclick="toggleDarkMode()" title="Alternar tema" aria-label="Alternar tema escuro">
+      <span aria-hidden="true">🌙</span>
+    </button>
+  </div>
+</header>
+
+<!-- UPLOAD CARD -->
+<section class="upload-card" aria-labelledby="upload-title">
+  <div class="upload-header">
+    <h2 id="upload-title" class="upload-label">📁 Carregar arquivo CSV</h2>
+    <span class="upload-hint">Exporte do Canvas LMS: <strong>Notas → Exportar → CSV</strong></span>
+  </div>
+
+  <!-- DRAG & DROP ZONE -->
+  <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Área para arrastar e soltar arquivo CSV">
+    <input type="file" id="fileInput" accept=".csv,text/csv" hidden>
+    <div class="dropzone-content">
+      <div class="dropzone-icon">📤</div>
+      <p class="dropzone-text">
+        <strong>Arraste seu CSV aqui</strong> ou <span class="dropzone-link">clique para selecionar</span>
+      </p>
+      <p class="dropzone-hint">Apenas arquivos .csv exportados do Canvas</p>
+      <p class="dropzone-file" id="dropzone-file"></p>
+    </div>
+  </div>
+
+  <!-- PREVIEW DO CSV -->
+  <div id="csv-preview" class="csv-preview" hidden>
+    <div class="csv-preview-header">
+      <h3>👁️ Pré-visualização</h3>
+      <button class="btn-link" onclick="cancelarUpload()">Cancelar</button>
+    </div>
+    <div id="csv-preview-content"></div>
+    <div class="csv-preview-actions">
+      <button class="btn-primary" onclick="confirmarProcessamento()">
+        ✅ Confirmar e processar
+      </button>
+    </div>
+  </div>
+
+  <!-- AÇÕES SECUNDÁRIAS -->
+  <div class="upload-actions">
+    <button class="btn-secondary" onclick="exportarCSV()" title="Baixar relatório CSV">
+      ⬇️ Exportar CSV
+    </button>
+    <button class="btn-secondary" onclick="mostrarHistorico()" title="Histórico de arquivos">
+      🕓 Histórico
+    </button>
+    <button class="btn-secondary" onclick="limparDados()" title="Limpar dados carregados" id="btnLimpar" hidden>
+      🗑️ Limpar dados
+    </button>
+  </div>
+
   <div id="progresso-container">
     <div id="progresso"></div>
   </div>
-  <p id="status"></p>
-</div>
+  <p id="status" role="status"></p>
+</section>
 
-<!-- CONTADORES + PESQUISA -->
-<div class="header-row">
-  <div class="top-bar">
-    <span id="count-all"       onclick="filterTable('all')"       title="Todos">🔎 0</span>
-    <span id="count-graduated" onclick="filterTable('graduated')" title="Graduados">🎓 0</span>
-    <span id="count-red"       onclick="filterTable('red')"       title="Críticos">🔴 0</span>
-    <span id="count-yellow"    onclick="filterTable('yellow')"    title="Atenção">🟡 0</span>
-    <span id="count-green"     onclick="filterTable('green')"     title="OK">🟢 0</span>
-  </div>
-  <div class="controls">
-    <input type="text" id="search" placeholder="Buscar aluno ou e-mail..." onkeyup="searchTable()">
-  </div>
-</div>
-
-<!-- AÇÕES -->
-<div class="actions">
-  <button onclick="mostrarAreaCopia()">📋 Copiar Desempenho em Massa</button>
-  <button class="btn-danger"  onclick="enviarParaTodos('red')">📧 Enviar para Críticos</button>
-  <button class="btn-warning" onclick="enviarParaTodos('yellow')">📧 Enviar para Atenção</button>
-</div>
-
-<!-- ÁREA DE CÓPIA -->
-<div id="area-copia" style="display:none;">
-  <textarea id="lista-emails" rows="8" placeholder="Cole os e-mails aqui (um por linha)"></textarea>
-  <br><br>
-  <button onclick="copiarDesempenhoOrdenado()">📋 Copiar para Área de Transferência</button>
-</div>
-
-<!-- GRÁFICOS -->
-<div id="graficos-container" style="display:none;">
-  <div class="graficos-grid">
-    <div class="grafico-card">
-      <h3>📊 Status dos Alunos</h3>
-      <canvas id="grafico-status"></canvas>
+<!-- EMPTY STATE -->
+<section id="empty-state" class="empty-state">
+  <div class="empty-icon">📥</div>
+  <h2>Nenhum dado carregado</h2>
+  <p>Carregue um CSV exportado do Canvas para começar a analisar o desempenho da turma.</p>
+  <div class="empty-features">
+    <div class="empty-feature">
+      <span class="empty-feature-icon">🎯</span>
+      <strong>Classificação automática</strong>
+      <span>Crítico, Atenção, OK e Graduado</span>
     </div>
-    <div class="grafico-card">
-      <h3>📈 Média da Turma</h3>
-      <canvas id="grafico-media"></canvas>
+    <div class="empty-feature">
+      <span class="empty-feature-icon">📧</span>
+      <strong>E-mails personalizados</strong>
+      <span>Mensagem pronta com pendências por aluno</span>
+    </div>
+    <div class="empty-feature">
+      <span class="empty-feature-icon">📊</span>
+      <strong>Visualização clara</strong>
+      <span>Tabela ordenável, filtros e gráficos</span>
     </div>
   </div>
+</section>
+
+<!-- ÁREA DE DADOS (escondida até carregar) -->
+<div id="dados-container" hidden>
+
+  <!-- CONTADORES + PESQUISA -->
+  <div class="header-row">
+    <div class="top-bar" role="tablist" aria-label="Filtrar por status">
+      <button class="counter active" id="count-all"       onclick="filterTable('all')"       role="tab" aria-selected="true"  title="Mostrar todos">🔎 <span class="counter-value">0</span><span class="counter-label">Todos</span></button>
+      <button class="counter"        id="count-graduated" onclick="filterTable('graduated')" role="tab" aria-selected="false" title="Apenas graduados">🎓 <span class="counter-value">0</span><span class="counter-label">Graduados</span></button>
+      <button class="counter"        id="count-red"       onclick="filterTable('red')"       role="tab" aria-selected="false" title="Apenas críticos">🔴 <span class="counter-value">0</span><span class="counter-label">Críticos</span></button>
+      <button class="counter"        id="count-yellow"    onclick="filterTable('yellow')"    role="tab" aria-selected="false" title="Apenas em atenção">🟡 <span class="counter-value">0</span><span class="counter-label">Atenção</span></button>
+      <button class="counter"        id="count-green"     onclick="filterTable('green')"     role="tab" aria-selected="false" title="Apenas OK">🟢 <span class="counter-value">0</span><span class="counter-label">OK</span></button>
+    </div>
+    <div class="controls">
+      <div class="search-wrapper">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="search" placeholder="Buscar aluno ou e-mail... (Pressione /)" onkeyup="searchTable()" aria-label="Buscar aluno ou e-mail">
+        <button class="search-clear" onclick="limparBusca()" title="Limpar busca" aria-label="Limpar busca" hidden id="searchClear">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AÇÕES -->
+  <div class="actions">
+    <button onclick="mostrarAreaCopia()" title="Copiar desempenho de uma lista de e-mails">
+      📋 Copiar desempenho em massa
+    </button>
+    <button class="btn-danger"  onclick="abrirEnvioMassa('red')"    title="Abrir lista de e-mails para alunos críticos">
+      📧 Enviar para críticos
+    </button>
+    <button class="btn-warning" onclick="abrirEnvioMassa('yellow')" title="Abrir lista de e-mails para alunos em atenção">
+      📧 Enviar para atenção
+    </button>
+    <button class="btn-secondary" onclick="toggleGraficos()" id="btnGraficos">
+      📊 Mostrar gráficos
+    </button>
+  </div>
+
+  <!-- ÁREA DE CÓPIA -->
+  <div id="area-copia" hidden>
+    <h3 class="card-title">📋 Cópia de desempenho em massa</h3>
+    <p class="card-hint">Cole uma lista de e-mails (um por linha) para copiar o desempenho na ordem.</p>
+    <textarea id="lista-emails" rows="6" placeholder="aluno1@exemplo.com&#10;aluno2@exemplo.com&#10;..."></textarea>
+    <div class="card-actions">
+      <button onclick="copiarDesempenhoOrdenado()">📋 Copiar para área de transferência</button>
+      <button class="btn-secondary" onclick="mostrarAreaCopia()">Fechar</button>
+    </div>
+  </div>
+
+  <!-- GRÁFICOS -->
+  <div id="graficos-container" hidden>
+    <div class="graficos-grid">
+      <div class="grafico-card">
+        <h3>📊 Distribuição por Status</h3>
+        <canvas id="grafico-status"></canvas>
+      </div>
+      <div class="grafico-card">
+        <h3>📈 Médias da Turma</h3>
+        <canvas id="grafico-media"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABELA -->
+  <div class="table-wrapper">
+    <table id="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th onclick="sortTable('name')"  class="sortable" data-key="name"  scope="col">Aluno <span class="sort-arrow">⬍</span></th>
+          <th onclick="sortTable('total')" class="sortable" data-key="total" scope="col">Progresso <span class="sort-arrow">⬍</span></th>
+          <th onclick="sortTable('total')" class="sortable" data-key="total" scope="col">Total <span class="sort-arrow">⬍</span></th>
+          <th onclick="sortTable('lab')"   class="sortable" data-key="lab"   scope="col">Lab <span class="sort-arrow">⬍</span></th>
+          <th onclick="sortTable('kc')"    class="sortable" data-key="kc"    scope="col">KC <span class="sort-arrow">⬍</span></th>
+          <th scope="col">Status</th>
+          <th scope="col">Ações</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="no-results" class="no-results" hidden>
+      <p>🔍 Nenhum aluno encontrado com esse filtro/busca.</p>
+    </div>
+  </div>
 </div>
 
-<!-- TABELA -->
-<div class="table-wrapper">
-  <table id="table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th onclick="sortTable('name')">Aluno ⬍</th>
-        <th onclick="sortTable('total')">Progresso ⬍</th>
-        <th onclick="sortTable('total')">Total ⬍</th>
-        <th onclick="sortTable('lab')">Lab ⬍</th>
-        <th onclick="sortTable('kc')">kc ⬍</th>
-        <th>Status</th>
-        <th>Ações</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<!-- ===================== MODAL: ENVIO EM MASSA ===================== -->
+<div id="modal-envio" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-envio-title" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modal-envio-title">📧 Envio de E-mails</h2>
+      <button class="modal-close" onclick="fecharModal('modal-envio')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-info" id="envio-info"></div>
+
+      <div class="envio-tabs" role="tablist">
+        <button class="envio-tab active"  role="tab" aria-selected="true"  data-tab="individual" onclick="trocarAbaEnvio('individual')">📨 Um por um</button>
+        <button class="envio-tab"         role="tab" aria-selected="false" data-tab="lista"      onclick="trocarAbaEnvio('lista')">📋 Copiar todos</button>
+        <button class="envio-tab"         role="tab" aria-selected="false" data-tab="exportar"   onclick="trocarAbaEnvio('exportar')">💾 Exportar mensagens</button>
+      </div>
+
+      <!-- TAB: INDIVIDUAL -->
+      <div id="envio-tab-individual" class="envio-tab-content active">
+        <p class="modal-hint">
+          ⚠️ Navegadores bloqueiam abertura de várias janelas em sequência.
+          Por isso, abrimos um e-mail por vez, com clique manual.
+        </p>
+        <div id="envio-lista" class="envio-lista"></div>
+        <div class="envio-progress">
+          <span id="envio-progress-text">0 de 0 e-mails abertos</span>
+          <button class="btn-primary" id="btn-proximo-email" onclick="abrirProximoEmail()">▶️ Abrir próximo</button>
+        </div>
+      </div>
+
+      <!-- TAB: LISTA -->
+      <div id="envio-tab-lista" class="envio-tab-content">
+        <p class="modal-hint">
+          Copie a lista de e-mails para colar em <strong>Para</strong> ou <strong>Cco</strong> do seu cliente de e-mail.
+          A mensagem terá que ser escrita manualmente (cada aluno tem pendências diferentes).
+        </p>
+        <textarea id="lista-emails-massa" rows="6" readonly></textarea>
+        <div class="card-actions">
+          <button onclick="copiarListaEmails()">📋 Copiar e-mails (separados por ;)</button>
+        </div>
+      </div>
+
+      <!-- TAB: EXPORTAR -->
+      <div id="envio-tab-exportar" class="envio-tab-content">
+        <p class="modal-hint">
+          Baixe um arquivo <strong>.txt</strong> com todas as mensagens prontas, separadas por aluno.
+          Útil para revisar antes de enviar ou para arquivar.
+        </p>
+        <div class="card-actions">
+          <button onclick="exportarMensagens()">💾 Baixar mensagens (.txt)</button>
+          <button class="btn-secondary" onclick="exportarMensagensCSV()">📊 Baixar como CSV</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: CONFIGURAÇÕES ===================== -->
+<div id="modal-config" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-config-title" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modal-config-title">⚙️ Configurações</h2>
+      <button class="modal-close" onclick="fecharModal('modal-config')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-group">
+        <label class="config-label" for="config-min-alunos">
+          Mínimo de alunos para considerar atividade ativa
+        </label>
+        <p class="config-hint">
+          Atividades preenchidas por menos alunos que este valor são ignoradas no cálculo
+          (evita pesar provas que poucos alunos fizeram).
+          <strong>Padrão: 5.</strong> Para turmas pequenas, reduza esse valor.
+        </p>
+        <div class="config-input-row">
+          <input type="number" id="config-min-alunos" min="1" max="100" value="5">
+          <button class="btn-secondary" onclick="resetarMinAlunos()">Restaurar padrão (5)</button>
+        </div>
+        <p class="config-info" id="config-min-alunos-info"></p>
+      </div>
+
+      <div class="config-group">
+        <label class="config-label" for="config-criterio-kc">Critério de KC para status "OK"</label>
+        <p class="config-hint">Mínimo de KC (%) para aluno ser considerado OK. Padrão: 70.</p>
+        <input type="number" id="config-criterio-kc" min="0" max="100" value="70">
+      </div>
+
+      <div class="config-group">
+        <label class="config-label" for="config-criterio-lab">Critério de Lab para status "OK"</label>
+        <p class="config-hint">Mínimo de Lab (%) para aluno ser considerado OK. Padrão: 95.</p>
+        <input type="number" id="config-criterio-lab" min="0" max="100" value="95">
+      </div>
+
+      <div class="config-group">
+        <label class="config-label" for="config-assunto-email">Assunto do e-mail</label>
+        <input type="text" id="config-assunto-email" value="Desempenho atual no curso AWS re/Start">
+      </div>
+
+      <div class="config-actions">
+        <button class="btn-primary" onclick="salvarConfiguracoes()">💾 Salvar e reprocessar</button>
+        <button class="btn-secondary" onclick="resetarConfiguracoes()">🔄 Restaurar tudo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: AJUDA ===================== -->
+<div id="modal-ajuda" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-ajuda-title" hidden>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modal-ajuda-title">❓ Como usar</h2>
+      <button class="modal-close" onclick="fecharModal('modal-ajuda')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>1️⃣ Exportar do Canvas</h3>
+      <p>No Canvas LMS, vá em <strong>Notas → Exportar → CSV</strong>. Não edite o arquivo no Excel.</p>
+
+      <h3>2️⃣ Carregar o arquivo</h3>
+      <p>Arraste o CSV para a área indicada ou clique para selecioná-lo. Você verá um <strong>preview</strong> antes de processar.</p>
+
+      <h3>3️⃣ Analisar e enviar e-mails</h3>
+      <p>A tabela mostra cada aluno e seu status. Clique em uma linha para ver pendências.
+      Use os filtros coloridos para separar por status. Para enviar e-mails, use as ações em massa
+      ou os botões individuais por aluno.</p>
+
+      <h3>⌨️ Atalhos de teclado</h3>
+      <ul>
+        <li><kbd>/</kbd> — Focar na busca</li>
+        <li><kbd>Esc</kbd> — Fechar modais e limpar busca</li>
+        <li><kbd>D</kbd> — Alternar tema escuro</li>
+      </ul>
+
+      <h3>📋 Critérios de status</h3>
+      <table class="ajuda-table">
+        <tr><td>🟢 OK</td>      <td>KC ≥ 70% <strong>e</strong> Lab ≥ 95%</td></tr>
+        <tr><td>🔴 Crítico</td> <td>KC &lt; 70% <strong>e</strong> Lab &lt; 95%</td></tr>
+        <tr><td>🟡 Atenção</td> <td>Apenas um dos critérios atingido</td></tr>
+        <tr><td>🎓 Graduado</td><td>Coluna <code>Graduated Final Points</code> = 1</td></tr>
+      </table>
+      <p class="config-hint">Os critérios são editáveis em ⚙️ Configurações.</p>
+    </div>
+  </div>
 </div>
 
 <!-- RODAPÉ -->
 <footer class="footer">
   <div class="footer-copyright">
-    © 2025-2026 Todos os direitos reservados.
+    © 2025–2026 — Todos os direitos reservados.
   </div>
   <div class="footer-devs">
-    <a class="dev-link" href="https://www.linkedin.com/in/anderson-garcia-albuquerque/" target="_blank">
+    <a class="dev-link" href="https://www.linkedin.com/in/anderson-garcia-albuquerque/" target="_blank" rel="noopener">
       <div class="dev-card">
-        <img class="dev-avatar" src="assets/anderson-albuquerque.jpg" alt="Anderson">
+        <img class="dev-avatar" src="assets/anderson-albuquerque.jpg" alt="Foto de Anderson Albuquerque">
         <span class="dev-name">Anderson Albuquerque</span>
       </div>
     </a>
-    <a class="dev-link" href="https://www.linkedin.com/in/brianrichard1/" target="_blank">
+    <a class="dev-link" href="https://www.linkedin.com/in/brianrichard1/" target="_blank" rel="noopener">
       <div class="dev-card">
-        <img class="dev-avatar" src="assets/brian-richard.jpg" alt="Brian">
+        <img class="dev-avatar" src="assets/brian-richard.jpg" alt="Foto de Brian Richard">
         <span class="dev-name">Brian Richard</span>
       </div>
     </a>
@@ -114,7 +359,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.2.0/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="app.js"></script>
 
 </body>

@@ -1,11 +1,53 @@
-let globalData = [];
-let currentFilter = "all";
-let currentSort = { key: "total", asc: false };
+/* =========================================================================
+   Desempenho Acadêmico — AWS re/Start
+   app.js (versão 2.0)
+   ========================================================================= */
+
+// ===================== ESTADO GLOBAL =====================
+let globalData      = [];
+let currentFilter   = "all";
+let currentSort     = { key: "total", asc: false };
+let pendingFile     = null;        // arquivo aguardando confirmação
+let pendingPreview  = null;        // dados do preview
+let chartStatus     = null;
+let chartMedia      = null;
+let envioFila       = [];          // fila de envio em massa
+let envioIndex      = 0;
+
+// ===================== CONFIG =====================
+const CONFIG_DEFAULT = {
+  minAlunos:    5,    // mínimo de alunos preenchidos para considerar atividade ativa
+  criterioKC:   70,   // mínimo de KC para status verde
+  criterioLab:  95,   // mínimo de Lab para status verde
+  assuntoEmail: "Desempenho atual no curso AWS re/Start"
+};
+
+let config = carregarConfig();
+
+function carregarConfig() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("config") || "{}");
+    return { ...CONFIG_DEFAULT, ...stored };
+  } catch {
+    return { ...CONFIG_DEFAULT };
+  }
+}
+
+function salvarConfigStorage() {
+  localStorage.setItem("config", JSON.stringify(config));
+}
 
 // ===================== DARK MODE =====================
 function toggleDarkMode() {
   document.body.classList.toggle("dark");
-  localStorage.setItem("darkMode", document.body.classList.contains("dark"));
+  const isDark = document.body.classList.contains("dark");
+  localStorage.setItem("darkMode", isDark);
+  const btn = document.getElementById("darkToggleBtn");
+  if (btn) btn.querySelector("span").textContent = isDark ? "☀️" : "🌙";
+  // Re-renderiza gráficos para atualizar cores
+  if (globalData.length && !document.getElementById("graficos-container").hasAttribute("hidden")) {
+    renderGraficos();
+  }
 }
 
 if (localStorage.getItem("darkMode") === "true") {
@@ -93,7 +135,7 @@ function esconderProgresso() {
     const barra = document.getElementById("progresso");
     container.style.display = "none";
     barra.style.width = "0%";
-  }, 700);
+  }, 600);
 }
 
 // ===================== HISTÓRICO =====================
@@ -121,22 +163,16 @@ function exportarCSV() {
   }
 
   const statusLabel = { green: "OK", red: "Crítico", yellow: "Atenção", graduated: "Graduado" };
-  const headers = ["Nome", "Email", "Progresso", "Total", "Lab", "KC", "Status"];
-
+  const headers = ["Nome", "Email", "Total", "Lab", "KC", "Status"];
   const rows = globalData.map(row => [
     row.name,
     row.email,
-    row.total + "%",
     row.total + "%",
     row.lab + "%",
     row.kc + "%",
     statusLabel[getStatus(row)] || ""
   ]);
-
-  const csv = [headers, ...rows]
-    .map(r => r.map(v => `"${v}"`).join(";"))
-    .join("\n");
-
+  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(";")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -147,36 +183,260 @@ function exportarCSV() {
   toast("Relatório exportado com sucesso! ✅");
 }
 
-// ===================== HANDLE FILE =====================
-function handleFile() {
-  const file = document.getElementById("fileInput").files[0];
+// ===================== DROPZONE / UPLOAD =====================
+function configurarDropzone() {
+  const dropzone  = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
 
-  if (!file) {
-    toast("Selecione um arquivo CSV.", "error");
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  dropzone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+
+  ["dragenter", "dragover"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add("dragover");
+    });
+  });
+
+  ["dragleave", "drop"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove("dragover");
+    });
+  });
+
+  dropzone.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length) {
+      receberArquivo(files[0]);
+    }
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) {
+      receberArquivo(fileInput.files[0]);
+    }
+  });
+}
+
+// ===================== VALIDAÇÃO + PREVIEW =====================
+function receberArquivo(file) {
+  // Validações iniciais (antes mesmo de parsear)
+  if (!file) return;
+
+  if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
+    toast(`"${file.name}" não parece ser um CSV.`, "error");
     return;
   }
 
-  document.getElementById("status").innerText = "Processando...";
-  mostrarProgresso(30);
+  if (file.size === 0) {
+    toast("Arquivo vazio.", "error");
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    toast("Arquivo muito grande (máx. 10MB).", "error");
+    return;
+  }
+
+  pendingFile = file;
+  document.getElementById("dropzone-file").textContent = `📄 ${file.name} (${formatBytes(file.size)})`;
+
+  // Parsear para preview, mas SEM aplicar ainda
+  document.getElementById("status").innerText = "Validando arquivo...";
+  mostrarProgresso(40);
 
   Papa.parse(file, {
     header: true,
+    skipEmptyLines: true,
     complete: function (results) {
       mostrarProgresso(80);
-      globalData = processCSV(results.data);
-      renderTable();
+      const validation = validarCSV(results.data, results.meta);
       mostrarProgresso(100);
       esconderProgresso();
-      salvarHistorico(file.name);
-      document.getElementById("status").innerText = "Processamento concluído ✅";
-      toast(`${globalData.length} aluno(s) carregado(s) com sucesso!`);
+      document.getElementById("status").innerText = "";
+
+      pendingPreview = { rawData: results.data, meta: results.meta, validation };
+      mostrarPreview(validation);
     },
-    error: function () {
+    error: function (err) {
       esconderProgresso();
-      document.getElementById("status").innerText = "Erro ao processar o arquivo.";
-      toast("Erro ao processar o arquivo.", "error");
+      document.getElementById("status").innerText = "";
+      toast("Erro ao ler o arquivo: " + (err?.message || "desconhecido"), "error");
+      pendingFile = null;
     }
   });
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function validarCSV(data, meta) {
+  const errors   = [];
+  const warnings = [];
+  const info     = {};
+
+  // Filtra linha "Points Possible" (Canvas adiciona)
+  const dataLimpa = data.filter(r =>
+    !String(Object.values(r)[0] || "").includes("Points Possible")
+  );
+
+  info.totalLinhas = dataLimpa.length;
+
+  if (!dataLimpa.length) {
+    errors.push("O arquivo não contém nenhum aluno.");
+    return { ok: false, errors, warnings, info };
+  }
+
+  const colunas = meta.fields || Object.keys(dataLimpa[0] || {});
+  info.totalColunas = colunas.length;
+
+  // Valida colunas obrigatórias
+  if (!colunas.some(c => c === "Student" || normalize(c) === "student")) {
+    errors.push('Coluna "Student" não encontrada. Verifique se exportou o CSV diretamente do Canvas.');
+  }
+  if (!colunas.some(c => c === "SIS Login ID" || normalize(c) === "sis login id")) {
+    errors.push('Coluna "SIS Login ID" (e-mail do aluno) não encontrada.');
+  }
+
+  // Detecta KCs e Labs
+  const kcCols  = colunas.filter(isKC);
+  const labCols = colunas.filter(isLab);
+
+  info.kcCols  = kcCols.length;
+  info.labCols = labCols.length;
+
+  if (kcCols.length === 0 && labCols.length === 0) {
+    errors.push("Nenhuma coluna de KC ou Lab detectada. As colunas devem começar com número e conter 'KC' ou 'Lab' (ex: '01-KC-Cloud Foundations').");
+  }
+
+  // Auto-ajuste do threshold se a turma for pequena
+  let minEfetivo = config.minAlunos;
+  if (dataLimpa.length < config.minAlunos) {
+    minEfetivo = Math.max(1, dataLimpa.length);
+    warnings.push(`Turma com apenas ${dataLimpa.length} alunos — limite mínimo ajustado de ${config.minAlunos} para ${minEfetivo} automaticamente.`);
+  }
+  info.minEfetivo = minEfetivo;
+
+  // Quantos KCs/Labs ATIVOS (com base no threshold)
+  function celulaPreenchida(row, col) {
+    const v = row[col];
+    return v !== undefined && v !== null && v.toString().trim() !== "";
+  }
+
+  const kcAtivos  = kcCols.filter(col => dataLimpa.filter(r => celulaPreenchida(r, col)).length >= minEfetivo);
+  const labAtivos = labCols.filter(col => dataLimpa.filter(r => celulaPreenchida(r, col)).length >= minEfetivo);
+
+  info.kcAtivos  = kcAtivos.length;
+  info.labAtivos = labAtivos.length;
+
+  if (kcAtivos.length === 0 && labAtivos.length === 0 && (kcCols.length > 0 || labCols.length > 0)) {
+    warnings.push(`Nenhuma atividade preenchida por pelo menos ${minEfetivo} alunos. Reduza o limite mínimo nas configurações ⚙️.`);
+  }
+
+  // Conta graduados
+  const graduados = dataLimpa.filter(r => parseFloat((r["Graduated Final Points"] || "0").replace(",", ".")) === 1).length;
+  info.graduados = graduados;
+
+  // Detecta possíveis e-mails inválidos
+  const emailsInvalidos = dataLimpa.filter(r => {
+    const e = (r["SIS Login ID"] || "").trim();
+    return e && !/@/.test(e);
+  }).length;
+  if (emailsInvalidos > 0) {
+    warnings.push(`${emailsInvalidos} aluno(s) sem e-mail válido — o envio individual pode não funcionar para eles.`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    info
+  };
+}
+
+function mostrarPreview(validation) {
+  const preview = document.getElementById("csv-preview");
+  const content = document.getElementById("csv-preview-content");
+  const { info, errors, warnings, ok } = validation;
+
+  let html = '';
+
+  // Stats em cards
+  html += '<div class="csv-stats">';
+  html += `<div class="csv-stat success"><span class="csv-stat-label">Alunos</span><span class="csv-stat-value">${info.totalLinhas || 0}</span></div>`;
+  html += `<div class="csv-stat ${info.kcAtivos > 0 ? 'success' : 'warning'}"><span class="csv-stat-label">KCs ativos</span><span class="csv-stat-value">${info.kcAtivos ?? 0} <small style="font-size:12px;color:var(--text-muted)">/ ${info.kcCols ?? 0}</small></span></div>`;
+  html += `<div class="csv-stat ${info.labAtivos > 0 ? 'success' : 'warning'}"><span class="csv-stat-label">Labs ativos</span><span class="csv-stat-value">${info.labAtivos ?? 0} <small style="font-size:12px;color:var(--text-muted)">/ ${info.labCols ?? 0}</small></span></div>`;
+  if (info.graduados !== undefined) {
+    html += `<div class="csv-stat"><span class="csv-stat-label">Graduados</span><span class="csv-stat-value">${info.graduados}</span></div>`;
+  }
+  html += `<div class="csv-stat"><span class="csv-stat-label">Limite mínimo</span><span class="csv-stat-value">${info.minEfetivo ?? config.minAlunos}</span></div>`;
+  html += '</div>';
+
+  if (errors.length) {
+    html += '<div class="csv-errors"><strong>❌ Erros encontrados:</strong><ul>';
+    errors.forEach(e => html += `<li>${e}</li>`);
+    html += '</ul></div>';
+  }
+
+  if (warnings.length) {
+    html += '<div class="csv-warnings"><strong>⚠️ Avisos:</strong><ul>';
+    warnings.forEach(w => html += `<li>${w}</li>`);
+    html += '</ul></div>';
+  }
+
+  content.innerHTML = html;
+
+  // Mostra/esconde botão "Confirmar"
+  const btnConfirmar = preview.querySelector(".csv-preview-actions button");
+  btnConfirmar.disabled = !ok;
+  btnConfirmar.textContent = ok ? "✅ Confirmar e processar" : "❌ Corrija os erros para continuar";
+
+  preview.hidden = false;
+  preview.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function cancelarUpload() {
+  pendingFile    = null;
+  pendingPreview = null;
+  document.getElementById("csv-preview").hidden = true;
+  document.getElementById("dropzone-file").textContent = "";
+  document.getElementById("fileInput").value = "";
+}
+
+function confirmarProcessamento() {
+  if (!pendingPreview || !pendingPreview.validation.ok) return;
+  document.getElementById("csv-preview").hidden = true;
+  document.getElementById("status").innerText = "Processando...";
+  mostrarProgresso(50);
+  setTimeout(() => {
+    globalData = processCSV(pendingPreview.rawData);
+    mostrarProgresso(100);
+    esconderProgresso();
+    salvarHistorico(pendingFile.name);
+    document.getElementById("status").innerText = "Processamento concluído ✅";
+    toast(`${globalData.length} aluno(s) carregado(s) com sucesso!`);
+
+    document.getElementById("empty-state").hidden = true;
+    document.getElementById("dados-container").hidden = false;
+    document.getElementById("btnLimpar").hidden = false;
+
+    renderTable();
+    pendingFile    = null;
+    pendingPreview = null;
+    document.getElementById("dropzone-file").textContent = "";
+  }, 200);
 }
 
 // ===================== PROCESSAR CSV =====================
@@ -202,13 +462,13 @@ function processCSV(data) {
     !String(Object.values(r)[0]).includes("Points Possible")
   );
 
-  const kcAtivos = kcCols.filter(col =>
-    data.filter(row => celulaNaoVazia(row, col)).length >= 5
-  );
+  // Auto-ajuste para turmas
+  const minEfetivo = data.length < config.minAlunos
+    ? Math.max(1, data.length)
+    : config.minAlunos;
 
-  const labAtivos = labCols.filter(col =>
-    data.filter(row => celulaNaoVazia(row, col)).length >= 5
-  );
+  const kcAtivos  = kcCols.filter(col => data.filter(row => celulaNaoVazia(row, col)).length >= minEfetivo);
+  const labAtivos = labCols.filter(col => data.filter(row => celulaNaoVazia(row, col)).length >= minEfetivo);
 
   const targetColumns = [...kcAtivos, ...labAtivos];
 
@@ -220,23 +480,15 @@ function processCSV(data) {
     targetColumns.forEach(col => {
       const preenchida = celulaNaoVazia(row, col);
       const val = toNumber(row[col]);
-
       if (isKC(col)) {
         kcCount++;
-        if (!preenchida) {
-          pendencias.push(col);
-        } else {
-          kcSum += val;
-        }
+        if (!preenchida) pendencias.push(col);
+        else kcSum += val;
       }
-
       if (isLab(col)) {
         labCount++;
-        if (!preenchida) {
-          pendencias.push(col);
-        } else {
-          labSum += val > 1 ? 1 : val;
-        }
+        if (!preenchida) pendencias.push(col);
+        else labSum += val > 1 ? 1 : val;
       }
     });
 
@@ -261,29 +513,60 @@ function getStatus(row) {
   if (row.graduated) return "graduated";
   const kc  = parseFloat(row.kc);
   const lab = parseFloat(row.lab);
-  if (kc >= 70 && lab >= 95)       return "green";
-  if (kc <= 69.99 && lab <= 94.99) return "red";
+  if (kc >= config.criterioKC && lab >= config.criterioLab) return "green";
+  if (kc < config.criterioKC && lab < config.criterioLab)   return "red";
   return "yellow";
 }
 
 // ===================== ORDENAÇÃO =====================
 function sortTable(key) {
-  if (currentSort.key === key) {
-    currentSort.asc = !currentSort.asc;
-  } else {
-    currentSort = { key, asc: false };
-  }
+  if (currentSort.key === key) currentSort.asc = !currentSort.asc;
+  else currentSort = { key, asc: false };
   renderTable();
 }
 
 // ===================== FILTROS =====================
 function filterTable(status) {
   currentFilter = status;
+  // Atualiza visual dos contadores
+  document.querySelectorAll(".counter").forEach(b => {
+    b.classList.remove("active");
+    b.setAttribute("aria-selected", "false");
+  });
+  const ativo = document.getElementById(
+    status === "all" ? "count-all" :
+    status === "graduated" ? "count-graduated" :
+    "count-" + status
+  );
+  if (ativo) {
+    ativo.classList.add("active");
+    ativo.setAttribute("aria-selected", "true");
+  }
   renderTable();
 }
 
 function searchTable() {
+  const search = document.getElementById("search").value;
+  document.getElementById("searchClear").hidden = !search;
   renderTable();
+}
+
+function limparBusca() {
+  document.getElementById("search").value = "";
+  document.getElementById("searchClear").hidden = true;
+  renderTable();
+  document.getElementById("search").focus();
+}
+
+function limparDados() {
+  if (!confirm("Tem certeza que deseja limpar todos os dados carregados?")) return;
+  globalData = [];
+  document.getElementById("empty-state").hidden = false;
+  document.getElementById("dados-container").hidden = true;
+  document.getElementById("btnLimpar").hidden = true;
+  document.getElementById("graficos-container").hidden = true;
+  document.getElementById("btnGraficos").innerText = "📊 Mostrar gráficos";
+  toast("Dados removidos.", "info");
 }
 
 // ===================== RENDER TABLE =====================
@@ -299,10 +582,12 @@ function renderTable() {
   });
 
   const search = document.getElementById("search").value.toLowerCase();
-  filtered = filtered.filter(r =>
-    r.name.toLowerCase().includes(search) ||
-    r.email.toLowerCase().includes(search)
-  );
+  if (search) {
+    filtered = filtered.filter(r =>
+      r.name.toLowerCase().includes(search) ||
+      r.email.toLowerCase().includes(search)
+    );
+  }
 
   filtered.sort((a, b) => {
     let valA = a[currentSort.key];
@@ -322,10 +607,13 @@ function renderTable() {
     if (s === "graduated") graduated++;
   });
 
+  // No-results state
+  document.getElementById("no-results").hidden = filtered.length > 0;
+
   filtered.forEach((row, index) => {
     const status  = getStatus(row);
     const msg     = gerarMensagem(row);
-    const assunto = "Desempenho atual no curso AWS re/Start";
+    const assunto = config.assuntoEmail;
 
     const icon =
       status === "graduated" ? "🎓" :
@@ -342,9 +630,7 @@ function renderTable() {
 
     tr.innerHTML = `
       <td>${index + 1}</td>
-      <td class="name-cell" title="${row.name} — ${row.email}">
-        ${icon} ${row.name}
-      </td>
+      <td class="name-cell" title="${row.name} — ${row.email}">${icon} ${row.name}</td>
       <td>
         <div class="progress-bar-container">
           <div class="progress-bar" style="width:${parseFloat(row.total)}%;background:${barColor};"></div>
@@ -356,18 +642,15 @@ function renderTable() {
       <td>${row.kc}%</td>
       <td>
         ${
-          status === "graduated"
-            ? '<span class="badge graduated">Graduado</span>'
-            : status === "green"
-            ? '<span class="badge green">OK</span>'
-            : status === "yellow"
-            ? '<span class="badge yellow">Atenção</span>'
-            : '<span class="badge red">Crítico</span>'
+          status === "graduated" ? '<span class="badge graduated">Graduado</span>' :
+          status === "green"     ? '<span class="badge green">OK</span>'           :
+          status === "yellow"    ? '<span class="badge yellow">Atenção</span>'     :
+                                   '<span class="badge red">Crítico</span>'
         }
       </td>
       <td class="actions-cell">
         <button class="action-btn btn-copiar" title="Copiar mensagem">📋</button>
-        <a class="action-btn" target="_blank" title="Enviar e-mail"
+        <a class="action-btn" target="_blank" title="Enviar e-mail (Outlook)"
           href="https://outlook.office.com/mail/deeplink/compose?to=${row.email}&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(msg)}">
           ✉️
         </a>
@@ -387,11 +670,22 @@ function renderTable() {
   });
 
   const total = globalData.length;
-  document.getElementById("count-all").innerText       = `🔎 ${total}`;
-  document.getElementById("count-red").innerText       = `🔴 ${red}`;
-  document.getElementById("count-yellow").innerText    = `🟡 ${yellow}`;
-  document.getElementById("count-green").innerText     = `🟢 ${green}`;
-  document.getElementById("count-graduated").innerText = `🎓 ${graduated}`;
+  document.getElementById("count-all").querySelector(".counter-value").innerText       = total;
+  document.getElementById("count-red").querySelector(".counter-value").innerText       = red;
+  document.getElementById("count-yellow").querySelector(".counter-value").innerText    = yellow;
+  document.getElementById("count-green").querySelector(".counter-value").innerText     = green;
+  document.getElementById("count-graduated").querySelector(".counter-value").innerText = graduated;
+
+  // Atualiza setas de ordenação
+  document.querySelectorAll("th.sortable").forEach(th => {
+    th.classList.remove("sort-active");
+    if (th.dataset.key === currentSort.key) th.classList.add("sort-active");
+  });
+
+  // Re-renderiza gráficos se estiverem visíveis
+  if (!document.getElementById("graficos-container").hidden) {
+    renderGraficos();
+  }
 }
 
 // ===================== LINHA EXPANSÍVEL =====================
@@ -401,19 +695,17 @@ function toggleDetalhe(tr, row) {
     next.remove();
     return;
   }
-
   const kcPendentes  = row.pendencias.filter(p => isKC(p)).map(formatarNomeAtividade);
   const labPendentes = row.pendencias.filter(p => isLab(p)).map(formatarNomeAtividade);
-
-  const listaKC  = kcPendentes.length  ? kcPendentes.join("<br>")  : "Nenhum pendente";
-  const listaLab = labPendentes.length ? labPendentes.join("<br>") : "Nenhum pendente";
+  const listaKC  = kcPendentes.length  ? kcPendentes.join("<br>")  : "<em>Nenhum pendente</em>";
+  const listaLab = labPendentes.length ? labPendentes.join("<br>") : "<em>Nenhum pendente</em>";
 
   const detalhe = document.createElement("tr");
   detalhe.className = "detalhe-row";
   detalhe.innerHTML = `
     <td colspan="8">
       <div class="detalhe-conteudo">
-        <strong>📧 E-mail:</strong> ${row.email}<br><br>
+        <strong>📧 E-mail:</strong> ${row.email || '<em>não informado</em>'}<br><br>
         <strong>📘 KCs pendentes (${kcPendentes.length}):</strong><br>${listaKC}
         <br><br>
         <strong>🧪 Labs pendentes (${labPendentes.length}):</strong><br>${listaLab}
@@ -426,7 +718,6 @@ function toggleDetalhe(tr, row) {
 // ===================== GERAR MENSAGEM =====================
 function gerarMensagem(row) {
   const saudacao = getSaudacao();
-
   const kcPendentes  = row.pendencias.filter(p => isKC(p));
   const labPendentes = row.pendencias.filter(p => isLab(p));
 
@@ -455,7 +746,7 @@ ${listaLab}
 Lembre-se:
 
 1. Conclusão de 100% dos Laboratórios.
-2. Pontuação mínima de 70% em KC's.
+2. Pontuação mínima de ${config.criterioKC}% em KC's.
 3. Presença mínima de 80%.
 
 Atenciosamente,`;
@@ -475,7 +766,11 @@ async function copiar(msg, email) {
 // ===================== ÁREA DE CÓPIA =====================
 function mostrarAreaCopia() {
   const area = document.getElementById("area-copia");
-  area.style.display = area.style.display === "none" ? "block" : "none";
+  area.hidden = !area.hidden;
+  if (!area.hidden) {
+    area.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    document.getElementById("lista-emails").focus();
+  }
 }
 
 // ===================== COPIAR DESEMPENHO ORDENADO =====================
@@ -490,7 +785,7 @@ function copiarDesempenhoOrdenado() {
 
   let resultado      = "";
   let encontrados    = 0;
-  let naoEncontrados = [];
+  const naoEncontrados = [];
 
   emails.forEach(email => {
     const aluno = globalData.find(a => (a.email || "").trim().toLowerCase() === email);
@@ -506,13 +801,7 @@ function copiarDesempenhoOrdenado() {
     }
   });
 
-  const temp = document.createElement("textarea");
-  temp.value = resultado.trim();
-  temp.style.cssText = "position:fixed;opacity:0;";
-  document.body.appendChild(temp);
-  temp.select();
-  document.execCommand("copy");
-  document.body.removeChild(temp);
+  copiarParaClipboard(resultado.trim());
 
   if (naoEncontrados.length > 0) {
     console.warn("E-mails não encontrados:", naoEncontrados);
@@ -522,8 +811,26 @@ function copiarDesempenhoOrdenado() {
   }
 }
 
-// ===================== ENVIO EM MASSA =====================
-async function enviarParaTodos(status) {
+function copiarParaClipboard(texto) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(texto).catch(() => fallbackCopy(texto));
+  } else {
+    fallbackCopy(texto);
+  }
+}
+
+function fallbackCopy(texto) {
+  const temp = document.createElement("textarea");
+  temp.value = texto;
+  temp.style.cssText = "position:fixed;opacity:0;";
+  document.body.appendChild(temp);
+  temp.select();
+  document.execCommand("copy");
+  document.body.removeChild(temp);
+}
+
+// ===================== ENVIO EM MASSA (MODAL) =====================
+function abrirEnvioMassa(status) {
   const alunos = globalData.filter(r => getStatus(r) === status);
 
   if (!alunos.length) {
@@ -538,22 +845,403 @@ async function enviarParaTodos(status) {
     graduated: "Graduados 🎓"
   };
 
-  const confirmar = confirm(
-    `Deseja abrir e-mail para ${alunos.length} aluno(s) com status "${labelMap[status]}"?\n\nO navegador pode bloquear múltiplos pop-ups.`
+  envioFila  = alunos;
+  envioIndex = 0;
+
+  document.getElementById("envio-info").innerHTML =
+    `Preparando e-mails para <strong>${alunos.length} aluno(s)</strong> com status <strong>${labelMap[status]}</strong>.`;
+
+  // Renderiza lista
+  const listaEl = document.getElementById("envio-lista");
+  listaEl.innerHTML = "";
+  alunos.forEach((aluno, idx) => {
+    const item = document.createElement("div");
+    item.className = "envio-item";
+    item.dataset.idx = idx;
+    item.innerHTML = `
+      <div class="envio-item-info">
+        <div class="envio-item-name">${aluno.name}</div>
+        <div class="envio-item-email">${aluno.email}</div>
+      </div>
+      <button class="envio-item-action btn-primary" onclick="abrirEmailIndividual(${idx})">
+        ✉️ Abrir
+      </button>
+    `;
+    listaEl.appendChild(item);
+  });
+
+  // Lista textual (para copiar)
+  document.getElementById("lista-emails-massa").value = alunos.map(a => a.email).join("; ");
+
+  atualizarProgressoEnvio();
+  abrirModal("modal-envio");
+  trocarAbaEnvio("individual");
+}
+
+function abrirEmailIndividual(idx) {
+  const aluno   = envioFila[idx];
+  const msg     = gerarMensagem(aluno);
+  const assunto = config.assuntoEmail;
+
+  window.open(
+    `https://outlook.office.com/mail/deeplink/compose?to=${aluno.email}` +
+    `&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(msg)}`,
+    "_blank"
   );
-  if (!confirmar) return;
 
-  const assunto = "Desempenho atual no curso AWS re/Start";
-
-  for (const aluno of alunos) {
-    const msg = gerarMensagem(aluno);
-    window.open(
-      `https://outlook.office.com/mail/deeplink/compose?to=${aluno.email}` +
-      `&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(msg)}`,
-      "_blank"
-    );
-    await new Promise(r => setTimeout(r, 600));
+  // Marca como enviado
+  const item = document.querySelector(`.envio-item[data-idx="${idx}"]`);
+  if (item) {
+    item.classList.add("sent");
+    const btn = item.querySelector("button");
+    btn.innerHTML = "✅ Aberto";
   }
 
-  toast(`${alunos.length} e-mail(s) aberto(s)! ✅`);
+  envioIndex = Math.max(envioIndex, idx + 1);
+  atualizarProgressoEnvio();
 }
+
+function abrirProximoEmail() {
+  if (envioIndex >= envioFila.length) {
+    toast("Todos os e-mails foram abertos! ✅");
+    return;
+  }
+  abrirEmailIndividual(envioIndex);
+}
+
+function atualizarProgressoEnvio() {
+  const enviados = document.querySelectorAll(".envio-item.sent").length;
+  const total = envioFila.length;
+  document.getElementById("envio-progress-text").innerText =
+    `${enviados} de ${total} e-mails abertos`;
+
+  const btnProximo = document.getElementById("btn-proximo-email");
+  if (enviados >= total) {
+    btnProximo.innerText = "✅ Todos abertos";
+    btnProximo.disabled = true;
+  } else {
+    btnProximo.innerText = "▶️ Abrir próximo";
+    btnProximo.disabled = false;
+  }
+}
+
+function trocarAbaEnvio(aba) {
+  document.querySelectorAll(".envio-tab").forEach(t => {
+    const ativa = t.dataset.tab === aba;
+    t.classList.toggle("active", ativa);
+    t.setAttribute("aria-selected", ativa ? "true" : "false");
+  });
+  document.querySelectorAll(".envio-tab-content").forEach(c => {
+    c.classList.toggle("active", c.id === `envio-tab-${aba}`);
+  });
+}
+
+function copiarListaEmails() {
+  const texto = document.getElementById("lista-emails-massa").value;
+  copiarParaClipboard(texto);
+  toast("Lista de e-mails copiada! ✅");
+}
+
+function exportarMensagens() {
+  let conteudo = "";
+  envioFila.forEach((aluno, i) => {
+    conteudo += `============================================================\n`;
+    conteudo += `Aluno ${i + 1}: ${aluno.name}\n`;
+    conteudo += `E-mail: ${aluno.email}\n`;
+    conteudo += `Assunto: ${config.assuntoEmail}\n`;
+    conteudo += `============================================================\n\n`;
+    conteudo += gerarMensagem(aluno);
+    conteudo += "\n\n";
+  });
+
+  const blob = new Blob([conteudo], { type: "text/plain;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mensagens_alunos_${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`${envioFila.length} mensagem(ns) exportada(s)! ✅`);
+}
+
+function exportarMensagensCSV() {
+  const headers = ["Nome", "Email", "Assunto", "Mensagem"];
+  const rows = envioFila.map(aluno => [
+    aluno.name,
+    aluno.email,
+    config.assuntoEmail,
+    gerarMensagem(aluno).replace(/\n/g, " | ")
+  ]);
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => `"${(v || "").toString().replace(/"/g, '""')}"`).join(";"))
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mensagens_alunos_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast("CSV de mensagens exportado! ✅");
+}
+
+// ===================== MODAIS GENÉRICOS =====================
+function abrirModal(id) {
+  document.getElementById(id).hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function fecharModal(id) {
+  document.getElementById(id).hidden = true;
+  document.body.style.overflow = "";
+}
+
+// Fecha modal ao clicar no fundo
+document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal")) {
+    e.target.hidden = true;
+    document.body.style.overflow = "";
+  }
+});
+
+// ===================== CONFIGURAÇÕES =====================
+function abrirConfiguracoes() {
+  document.getElementById("config-min-alunos").value    = config.minAlunos;
+  document.getElementById("config-criterio-kc").value   = config.criterioKC;
+  document.getElementById("config-criterio-lab").value  = config.criterioLab;
+  document.getElementById("config-assunto-email").value = config.assuntoEmail;
+
+  // Atualiza info contextual
+  const infoEl = document.getElementById("config-min-alunos-info");
+  if (globalData.length && globalData.length < config.minAlunos) {
+    infoEl.innerText = `ℹ️ Sua turma tem ${globalData.length} alunos — o limite efetivo será reduzido automaticamente.`;
+  } else {
+    infoEl.innerText = "";
+  }
+
+  abrirModal("modal-config");
+}
+
+function salvarConfiguracoes() {
+  const minAlunos    = parseInt(document.getElementById("config-min-alunos").value, 10);
+  const criterioKC   = parseFloat(document.getElementById("config-criterio-kc").value);
+  const criterioLab  = parseFloat(document.getElementById("config-criterio-lab").value);
+  const assuntoEmail = document.getElementById("config-assunto-email").value.trim();
+
+  if (isNaN(minAlunos) || minAlunos < 1) {
+    toast("Limite mínimo deve ser pelo menos 1.", "error");
+    return;
+  }
+  if (isNaN(criterioKC) || criterioKC < 0 || criterioKC > 100) {
+    toast("Critério de KC deve ser entre 0 e 100.", "error");
+    return;
+  }
+  if (isNaN(criterioLab) || criterioLab < 0 || criterioLab > 100) {
+    toast("Critério de Lab deve ser entre 0 e 100.", "error");
+    return;
+  }
+  if (!assuntoEmail) {
+    toast("Assunto não pode ser vazio.", "error");
+    return;
+  }
+
+  const minMudou = config.minAlunos !== minAlunos;
+
+  config.minAlunos    = minAlunos;
+  config.criterioKC   = criterioKC;
+  config.criterioLab  = criterioLab;
+  config.assuntoEmail = assuntoEmail;
+
+  salvarConfigStorage();
+  fecharModal("modal-config");
+
+  // Se o limite mudou e tem dados, reprocessa
+  if (minMudou && pendingPreview) {
+    // ainda no preview — atualiza
+    const validation = validarCSV(pendingPreview.rawData, pendingPreview.meta);
+    pendingPreview.validation = validation;
+    mostrarPreview(validation);
+  }
+
+  if (globalData.length) {
+    // Re-renderiza a tabela (status e cores podem ter mudado)
+    renderTable();
+    if (minMudou) {
+      toast("Configurações salvas! Recarregue o CSV para aplicar o novo limite mínimo.", "info");
+    } else {
+      toast("Configurações salvas e aplicadas! ✅");
+    }
+  } else {
+    toast("Configurações salvas! ✅");
+  }
+}
+
+function resetarConfiguracoes() {
+  if (!confirm("Restaurar todas as configurações para o padrão?")) return;
+  config = { ...CONFIG_DEFAULT };
+  salvarConfigStorage();
+  abrirConfiguracoes();
+  toast("Configurações restauradas para o padrão.");
+}
+
+function resetarMinAlunos() {
+  document.getElementById("config-min-alunos").value = CONFIG_DEFAULT.minAlunos;
+}
+
+// ===================== AJUDA =====================
+function abrirAjuda() {
+  abrirModal("modal-ajuda");
+}
+
+// ===================== GRÁFICOS =====================
+function toggleGraficos() {
+  const container = document.getElementById("graficos-container");
+  const btn       = document.getElementById("btnGraficos");
+  if (container.hidden) {
+    container.hidden = false;
+    btn.innerText = "📊 Ocultar gráficos";
+    renderGraficos();
+  } else {
+    container.hidden = true;
+    btn.innerText = "📊 Mostrar gráficos";
+  }
+}
+
+function renderGraficos() {
+  if (!globalData.length || typeof Chart === "undefined") return;
+
+  let red = 0, yellow = 0, green = 0, graduated = 0;
+  let kcSum = 0, labSum = 0, totalSum = 0;
+  let count = 0;
+  globalData.forEach(row => {
+    const s = getStatus(row);
+    if (s === "red")       red++;
+    if (s === "yellow")    yellow++;
+    if (s === "green")     green++;
+    if (s === "graduated") graduated++;
+    kcSum    += parseFloat(row.kc);
+    labSum   += parseFloat(row.lab);
+    totalSum += parseFloat(row.total);
+    count++;
+  });
+
+  const isDark = document.body.classList.contains("dark");
+  const textColor = isDark ? "#e2e8f0" : "#1f2937";
+  const gridColor = isDark ? "#334155" : "#e5e7eb";
+
+  // Gráfico de status (donut)
+  const ctxStatus = document.getElementById("grafico-status").getContext("2d");
+  if (chartStatus) chartStatus.destroy();
+  chartStatus = new Chart(ctxStatus, {
+    type: "doughnut",
+    data: {
+      labels: ["Críticos 🔴", "Atenção 🟡", "OK 🟢", "Graduados 🎓"],
+      datasets: [{
+        data: [red, yellow, green, graduated],
+        backgroundColor: ["#dc2626", "#f59e0b", "#16a34a", "#2563eb"],
+        borderColor: isDark ? "#1e293b" : "#fff",
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { color: textColor, font: { size: 12 }, padding: 12 }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+              return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Gráfico de média (bar)
+  const mediaKC    = count ? (kcSum / count).toFixed(2)    : 0;
+  const mediaLab   = count ? (labSum / count).toFixed(2)   : 0;
+  const mediaTotal = count ? (totalSum / count).toFixed(2) : 0;
+
+  const ctxMedia = document.getElementById("grafico-media").getContext("2d");
+  if (chartMedia) chartMedia.destroy();
+  chartMedia = new Chart(ctxMedia, {
+    type: "bar",
+    data: {
+      labels: ["KCs", "Labs", "Total"],
+      datasets: [{
+        label: "Média da turma (%)",
+        data: [mediaKC, mediaLab, mediaTotal],
+        backgroundColor: ["#3b82f6", "#8b5cf6", "#10b981"],
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y}%` } }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { color: textColor, callback: (v) => v + "%" },
+          grid: { color: gridColor }
+        },
+        x: {
+          ticks: { color: textColor },
+          grid: { color: gridColor }
+        }
+      }
+    }
+  });
+}
+
+// ===================== ATALHOS DE TECLADO =====================
+document.addEventListener("keydown", (e) => {
+  // Ignora se estiver digitando em input/textarea
+  const inField = ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
+
+  if (e.key === "/" && !inField) {
+    e.preventDefault();
+    const search = document.getElementById("search");
+    if (search) search.focus();
+  }
+
+  if (e.key === "Escape") {
+    // Fecha modais abertos
+    document.querySelectorAll(".modal:not([hidden])").forEach(m => {
+      m.hidden = true;
+    });
+    document.body.style.overflow = "";
+    // Limpa busca
+    const search = document.getElementById("search");
+    if (search && search.value && document.activeElement === search) {
+      search.value = "";
+      document.getElementById("searchClear").hidden = true;
+      renderTable();
+    }
+  }
+
+  if ((e.key === "d" || e.key === "D") && !inField) {
+    toggleDarkMode();
+  }
+});
+
+// ===================== INICIALIZAÇÃO =====================
+document.addEventListener("DOMContentLoaded", () => {
+  configurarDropzone();
+
+  // Atualiza ícone do dark mode
+  const isDark = document.body.classList.contains("dark");
+  const btn = document.getElementById("darkToggleBtn");
+  if (btn) btn.querySelector("span").textContent = isDark ? "☀️" : "🌙";
+});
