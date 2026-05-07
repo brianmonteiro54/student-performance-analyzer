@@ -1077,7 +1077,7 @@ Atenciosamente,`;
     ? config.encerramentos[row.section]
     : null;
   const avisoEncerramento = encerramentoISO
-    ? `\nENCERRAMENTO DO CANVAS DIA ${formatarEncerramento(encerramentoISO)}, DEPOIS DESTE PERíODO NÃO SERÁ POSSíVEL FAZER MAIS ENTREGAS E O ALUNO SERÁ CONSIDERADO REPROVADO.\n`
+    ? `\nENCERRAMENTO NO CANVAS: ${formatarEncerramento(encerramentoISO)}, APÓS ESTE PERÍODO, NÃO SERÁ POSSÍVEL REALIZAR ENTREGAS E O ALUNO SERÁ CONSIDERADO REPROVADO.\n`
     : "";
 
   return `${saudacao} ${row.name}, tudo bem com você?

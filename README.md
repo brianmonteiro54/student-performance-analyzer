@@ -68,7 +68,7 @@ Esses casos aparecem como avisos no preview e não interferem nos cálculos da t
 
 Configura uma data/hora limite para cada turma (campo `Section` do CSV — ex: `BRSAO244`). Quando configurada, alunos **não-graduados** dessa turma recebem um aviso adicional na mensagem:
 
-> *"ENCERRAMENTO DO CANVAS DIA 20/05/2026 Às 23:59, DEPOIS DESTE PERíODO NÃO SERÁ POSSíVEL FAZER MAIS ENTREGAS E O ALUNO SERÁ CONSIDERADO REPROVADO."*
+> *"ENCERRAMENTO NO CANVAS: DIA 20/05/2026 Às 23:59, APÓS ESTE PERÍODO, NÃO SERÁ POSSÍVEL REALIZAR ENTREGAS E O ALUNO SERÁ CONSIDERADO REPROVADO."*
 
 - **Por turma**: cada `Section` pode ter sua própria data
 - **Persistente**: salvo no `localStorage`, basta carregar o CSV da turma para o aviso aparecer automaticamente nas mensagens
