@@ -28,18 +28,28 @@ function fallbackCopy(texto) {
 }
 
 /**
- * Copia mensagem e abre o Outlook Web em paralelo —
- * usado pelo botão 📋 em cada linha da tabela.
+ * Copia mensagem para a área de transferência E abre o Outlook Web já preenchido
+ * com destinatário e assunto — usado pelo botão 📋 em cada linha da tabela.
+ *
+ * Diferente do botão ✉️ (que joga tudo na URL), aqui o CORPO da mensagem NÃO
+ * vai na URL: alunos com muitos KCs/Labs pendentes geram mensagens longas que
+ * estouram o limite de URL do Outlook e o e-mail abre vazio. Por isso copiamos
+ * o corpo pra área de transferência — o usuário só precisa colar (Ctrl+V) no
+ * rascunho que abre.
  */
-export async function copiarEAbrirOutlook(msg, email) {
+export async function copiarEAbrirOutlook(msg, email, assunto = "") {
   try {
     await navigator.clipboard.writeText(msg);
-    toast("Mensagem copiada! Abrindo e-mail... ✅");
+    toast("Mensagem copiada! Abrindo e-mail — cole o corpo com Ctrl+V. ✅");
   } catch {
     toast("Não foi possível copiar automaticamente.", "error");
   }
+
+  const params = new URLSearchParams({ to: email });
+  if (assunto) params.set("subject", assunto);
+
   window.open(
-    `https://outlook.office.com/mail/deeplink/compose?to=${email}`,
+    `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`,
     "_blank"
   );
 }
