@@ -110,17 +110,35 @@ export function salvarConfiguracoes() {
   }
 }
 
-/** Reseta critérios e assunto para o padrão (preserva alunos ignorados). */
+/** Reseta TUDO para o padrão (critérios, assunto, encerramentos e ignorados). */
 export function resetarConfiguracoes() {
-  if (
-    !confirm(
-      "Restaurar configurações de critério para o padrão?\n\n(A lista de alunos ignorados será preservada.)"
-    )
-  )
-    return;
+  const totalIgn = config.alunosIgnorados.length;
+  const totalEnc = Object.keys(config.encerramentos || {}).length;
+
+  let aviso = "Restaurar TODAS as configurações para o padrão?\n\n";
+  aviso += "Isso vai apagar:\n";
+  aviso += "  • Critérios (KC, Lab, mínimo de alunos)\n";
+  aviso += "  • Assunto do e-mail\n";
+  if (totalEnc) aviso += `  • ${totalEnc} data(s) de encerramento\n`;
+  if (totalIgn) aviso += `  • ${totalIgn} aluno(s) ignorado(s) manualmente\n`;
+  aviso += "\n⚠️ Esta ação não pode ser desfeita.";
+  if (totalIgn || totalEnc) {
+    aviso += '\nDica: exporte um backup antes (botão "💾 Exportar backup").';
+  }
+
+  if (!confirm(aviso)) return;
+
   resetConfig();
   abrirConfiguracoes();
-  toast("Configurações de critério restauradas para o padrão.");
+
+  // Limpar ignorados muda quem aparece na tabela; mudar critérios afeta status.
+  // Reprocessa se houver dados carregados.
+  if (state.globalData.length) {
+    reprocessar();
+    toast("Configurações restauradas e cálculos refeitos. ✅");
+  } else {
+    toast("Configurações restauradas para o padrão. ✅");
+  }
 }
 
 /** Restaura apenas o campo "minAlunos" para o default (sem salvar ainda). */

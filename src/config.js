@@ -78,12 +78,18 @@ export function saveConfig() {
 }
 
 /**
- * Reseta tudo para o padrão, EXCETO a lista de ignorados (que tem
- * dados manualmente curados pelo usuário e geralmente não deve ser perdida).
+ * Reseta TODAS as configurações para o padrão — incluindo critérios,
+ * assunto, datas de encerramento e a lista de alunos ignorados.
+ *
+ * É uma operação destrutiva. O chamador (UI) é responsável por pedir
+ * confirmação ao usuário e por reprocessar os dados em tela.
  */
 export function resetConfig() {
-  const ignoradosBackup = [...config.alunosIgnorados];
   Object.keys(config).forEach((k) => delete config[k]);
-  Object.assign(config, { ...CONFIG_DEFAULT, alunosIgnorados: ignoradosBackup });
+  Object.assign(config, {
+    ...CONFIG_DEFAULT,
+    alunosIgnorados: [],
+    encerramentos: {},
+  });
   saveConfig();
 }

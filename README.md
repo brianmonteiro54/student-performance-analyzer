@@ -20,17 +20,17 @@ Aplicação web para análise de desempenho de alunos em turmas AWS re/Start, co
 - 🚫 **Lista de alunos ignorados** com import/export
 - 📅 **Avisos de encerramento** por turma
 - ⌨️ **Atalhos de teclado** (`/` busca, `Esc` fecha modais, `D` modo escuro)
-- 💾 **100% client-side** — nenhum dado sai do navegador
+- 💾 **100% client-side** nenhum dado sai do navegador
 
 ---
 
 ## 🏗️ Arquitetura
 
-Refatorada em **camadas com responsabilidades claras**, seguindo princípios de separação de concerns. Sem build step — usa ES Modules nativos do navegador.
+Refatorada em **camadas com responsabilidades claras**, seguindo princípios de separação de concerns. Sem build step usa ES Modules nativos do navegador.
 
 ```
 src/
-├── main.js              # Entry point — registry de actions e event delegation
+├── main.js              # Entry point registry de actions e event delegation
 ├── state.js             # Estado global centralizado
 ├── config.js            # Configurações persistidas (localStorage)
 │
@@ -68,7 +68,7 @@ src/
     └── shortcuts.js     # Atalhos de teclado
 
 styles/
-├── main.css             # Entry — @imports na ordem de cascata
+├── main.css             # Entry @imports na ordem de cascata
 ├── base/
 │   ├── variables.css    # Custom properties (light + dark)
 │   └── reset.css        # Reset/normalize
@@ -83,18 +83,18 @@ styles/
 ### Decisões de design
 
 
-- **Event delegation com `data-action`** — todos os listeners centralizados em `main.js`. Zero `onclick` inline (incompatível com `type="module"` por causa do escopo).
-- **CSS modular com `@import`** — divisão por responsabilidade visual. Ordem garantida no `main.css`.
-- **Camadas com dependências unidirecionais** — `ui` depende de `services` e `core`; `services` depende de `core`; `core` é puro. Nada depende de `ui`.
-- **Estado centralizado** em `state.js` — fonte única de verdade, evita variáveis globais espalhadas.
+- **Event delegation com `data-action`** todos os listeners centralizados em `main.js`. Zero `onclick` inline (incompatível com `type="module"` por causa do escopo).
+- **CSS modular com `@import`** divisão por responsabilidade visual. Ordem garantida no `main.css`.
+- **Camadas com dependências unidirecionais**  `ui` depende de `services` e `core`; `services` depende de `core`; `core` é puro. Nada depende de `ui`.
+- **Estado centralizado** em `state.js` fonte única de verdade, evita variáveis globais espalhadas.
 
 ---
 
 
 ## 📦 Dependências externas (CDN)
 
-- [PapaParse](https://www.papaparse.com/) — parser CSV robusto
-- [Chart.js](https://www.chartjs.org/) — gráficos
+- [PapaParse](https://www.papaparse.com/) parser CSV robusto
+- [Chart.js](https://www.chartjs.org/) gráficos
 
 Ambas carregadas via CDN no `index.html`. 
 
@@ -105,7 +105,7 @@ Ambas carregadas via CDN no `index.html`.
 Exportação padrão do Canvas LMS contendo (no mínimo) as colunas:
 - `Student` (nome do aluno)
 - `SIS Login ID` (email institucional)
-- `Section` (turma — ex: `AWS-RESTART-BRSAO-2024-01`)
+- `Section` (turma ex: `AWS-RESTART-BRSAO-2024-01`)
 - Colunas de atividades (Knowledge Checks e Labs)
 
 A aplicação detecta automaticamente:
