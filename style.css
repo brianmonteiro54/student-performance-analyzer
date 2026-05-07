@@ -1171,6 +1171,48 @@ body.dark .modal-info {
   color: var(--text-soft);
 }
 
+/* ===================== LISTA DE ENCERRAMENTOS POR TURMA ===================== */
+#config-encerramentos-lista {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#config-encerramentos-lista:has(p.config-hint) {
+  border: none;
+}
+
+.encerramento-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.encerramento-item:last-child { border-bottom: none; }
+
+.encerramento-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.encerramento-info strong {
+  font-size: 14px;
+  color: var(--text);
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.encerramento-data {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* ===================== AJUDA ===================== */
 .modal-body h3 {
   margin: 14px 0 6px 0;

@@ -21,7 +21,8 @@ const CONFIG_DEFAULT = {
   criterioKC:       70,   // mínimo de KC para status verde
   criterioLab:      95,   // mínimo de Lab para status verde
   assuntoEmail:     "Desempenho atual no curso AWS re/Start",
-  alunosIgnorados:  []    // lista de emails/IDs ignorados manualmente pelo usuário
+  alunosIgnorados:  [],   // lista de alunos ignorados manualmente: [{ chave, nome, quando }]
+  encerramentos:    {}    // mapa de Section → ISO datetime: { "BRSAO244": "2026-05-20T23:59" }
 };
 
 let config = carregarConfig();
@@ -42,9 +43,13 @@ function carregarConfig() {
       }
       return item;
     }).filter(item => item && item.chave);
+    // Garante que encerramentos é um objeto plain
+    if (typeof merged.encerramentos !== "object" || merged.encerramentos === null || Array.isArray(merged.encerramentos)) {
+      merged.encerramentos = {};
+    }
     return merged;
   } catch {
-    return { ...CONFIG_DEFAULT, alunosIgnorados: [] };
+    return { ...CONFIG_DEFAULT, alunosIgnorados: [], encerramentos: {} };
   }
 }
 
@@ -169,6 +174,16 @@ function formatarNomeAtividade(col) {
     return `${numero} - ${resto}`;
   }
   return nome;
+}
+
+// Formata um datetime ISO local (ex: "2026-05-20T23:59") em texto BR ("20/05/2026 Às 23:59")
+function formatarEncerramento(iso) {
+  if (!iso) return "";
+  const [date, time] = iso.split("T");
+  if (!date) return "";
+  const [y, m, d] = date.split("-");
+  const [h, min] = (time || "23:59").split(":");
+  return `${d}/${m}/${y} Às ${h}:${min}`;
 }
 
 // ===================== PROGRESSO =====================
@@ -602,6 +617,7 @@ function processCSV(data) {
       name:      fixEncoding((row["Student"] || "").split(", ").reverse().join(" ")),
       email:     (row["SIS Login ID"] || "").trim().toLowerCase(),
       id:        (row["ID"] || "").toString().trim(),
+      section:   (row["Section"] || "").toString().trim().toUpperCase(),
       kc:        kc.toFixed(2),
       lab:       lab.toFixed(2),
       total:     total.toFixed(2),
@@ -818,6 +834,64 @@ function importarListaIgnorados() {
   input.click();
 }
 
+// ===================== ENCERRAMENTOS POR TURMA =====================
+function adicionarEncerramento() {
+  const sectionEl = document.getElementById("config-encerramento-section");
+  const dataEl    = document.getElementById("config-encerramento-data");
+  const section   = (sectionEl.value || "").trim().toUpperCase();
+  const data      = (dataEl.value || "").trim();
+
+  if (!section) {
+    toast("Informe o código da turma (ex: BRSAO244).", "error");
+    sectionEl.focus();
+    return;
+  }
+  if (!data) {
+    toast("Informe a data e hora de encerramento.", "error");
+    dataEl.focus();
+    return;
+  }
+
+  config.encerramentos[section] = data;
+  salvarConfigStorage();
+  renderListaEncerramentos();
+  sectionEl.value = "";
+  dataEl.value = "";
+  toast(`Encerramento da turma ${section} configurado para ${formatarEncerramento(data)} ✅`);
+  // Re-renderiza a tabela para que os botões 📋/✉️ peguem a nova mensagem
+  if (globalData.length) renderTable();
+}
+
+function removerEncerramento(section) {
+  if (!confirm(`Remover a data de encerramento da turma "${section}"?`)) return;
+  delete config.encerramentos[section];
+  salvarConfigStorage();
+  renderListaEncerramentos();
+  if (globalData.length) renderTable();
+  toast(`Encerramento da turma ${section} removido.`, "info");
+}
+
+function renderListaEncerramentos() {
+  const container = document.getElementById("config-encerramentos-lista");
+  if (!container) return;
+
+  const entries = Object.entries(config.encerramentos || {});
+  if (!entries.length) {
+    container.innerHTML = '<p class="config-hint" style="margin:0">Nenhuma data de encerramento configurada.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map(([section, iso]) => {
+    return `<div class="encerramento-item">
+      <div class="encerramento-info">
+        <strong>${section}</strong>
+        <span class="encerramento-data">📅 ${formatarEncerramento(iso)}</span>
+      </div>
+      <button class="btn-link" onclick="removerEncerramento('${section.replace(/'/g, "\\'")}')">🗑️ Remover</button>
+    </div>`;
+  }).join("");
+}
+
 // ===================== RENDER TABLE =====================
 function renderTable() {
   const tbody = document.querySelector("#table tbody");
@@ -998,6 +1072,14 @@ Atenciosamente,`;
     ? labPendentes.map(item => formatarNomeAtividade(item)).join("\n")
     : "Nenhum pendente";
 
+  // Aviso opcional de encerramento — só se houver data configurada para a turma do aluno
+  const encerramentoISO = row.section && config.encerramentos
+    ? config.encerramentos[row.section]
+    : null;
+  const avisoEncerramento = encerramentoISO
+    ? `\nENCERRAMENTO DO CANVAS DIA ${formatarEncerramento(encerramentoISO)}, DEPOIS DESTE PERíODO NÃO SERÁ POSSíVEL FAZER MAIS ENTREGAS E O ALUNO SERÁ CONSIDERADO REPROVADO.\n`
+    : "";
+
   return `${saudacao} ${row.name}, tudo bem com você?
 
 Segue seu desempenho atual nas atividades re/Start:
@@ -1005,7 +1087,7 @@ Segue seu desempenho atual nas atividades re/Start:
 Na média em KC's você está com ${row.kc}%, e em Lab's está em ${row.lab}%.
 
 Os KCs/Labs pendentes são:
-
+${avisoEncerramento}
 📘 KC (Knowledge Check)
 ${listaKC}
 
@@ -1288,7 +1370,15 @@ function abrirConfiguracoes() {
     infoEl.innerText = "";
   }
 
+  // Pré-popula campo de Section com a turma do CSV atual (se houver)
+  const sectionEl = document.getElementById("config-encerramento-section");
+  if (sectionEl) {
+    const turmaAtual = globalData.length && globalData[0].section ? globalData[0].section : "";
+    sectionEl.placeholder = turmaAtual ? `Ex: ${turmaAtual} (turma atual)` : "Ex: BRSAO244";
+  }
+
   renderListaIgnorados();
+  renderListaEncerramentos();
   abrirModal("modal-config");
 }
 

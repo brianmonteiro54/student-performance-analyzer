@@ -264,8 +264,8 @@
         </label>
         <p class="config-hint">
           Atividades preenchidas por menos alunos que este valor são ignoradas no cálculo
-          (evita pesar kc/labs que poucos alunos fizeram).
-          <strong>Padrão: 5.</strong>
+          (evita pesar provas que poucos alunos fizeram).
+          <strong>Padrão: 5.</strong> Para turmas pequenas, reduza esse valor.
         </p>
         <div class="config-input-row">
           <input type="number" id="config-min-alunos" min="1" max="100" value="5">
@@ -289,6 +289,21 @@
       <div class="config-group">
         <label class="config-label" for="config-assunto-email">Assunto do e-mail</label>
         <input type="text" id="config-assunto-email" value="Desempenho atual no curso AWS re/Start">
+      </div>
+
+      <div class="config-group">
+        <label class="config-label">📅 Datas de encerramento por turma <span style="font-weight:normal;color:var(--text-muted);font-size:12px">(opcional)</span></label>
+        <p class="config-hint">
+          Define uma data/hora limite para cada turma (campo <code>Section</code> do CSV).
+          Quando configurada, alunos <strong>não-graduados</strong> dessa turma recebem um aviso adicional
+          no e-mail de cobrança informando o prazo final.
+        </p>
+        <div class="config-input-row" style="gap:6px">
+          <input type="text" id="config-encerramento-section" placeholder="Ex: BRSAO244" style="flex:1;min-width:140px;text-transform:uppercase">
+          <input type="datetime-local" id="config-encerramento-data" style="flex:1.2;min-width:200px">
+          <button class="btn-primary" onclick="adicionarEncerramento()" title="Adicionar ou atualizar">➕ Adicionar</button>
+        </div>
+        <div id="config-encerramentos-lista" style="margin-top:10px"></div>
       </div>
 
       <div class="config-group">
