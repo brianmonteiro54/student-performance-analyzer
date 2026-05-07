@@ -974,6 +974,19 @@ function toggleDetalhe(tr, row) {
 // ===================== GERAR MENSAGEM =====================
 function gerarMensagem(row) {
   const saudacao = getSaudacao();
+
+  // Mensagem especial e celebrativa para alunos graduados
+  if (row.graduated) {
+    return `${saudacao} ${row.name}, tudo bem com você?
+
+Você concluiu todos os KCs e laboratórios da plataforma Canvas e oficializou sua graduação no curso AWS re/Start! Seu status no sistema foi atualizado para Graduated 🎓.
+
+Que jornada! Foram vários meses de dedicação, laboratórios desafiadores e muita persistência, e você chegou até aqui.
+
+Atenciosamente,`;
+  }
+
+  // Mensagem padrão (alunos ainda em curso)
   const kcPendentes  = row.pendencias.filter(p => isKC(p));
   const labPendentes = row.pendencias.filter(p => isLab(p));
 
